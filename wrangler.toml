@@ -7,6 +7,25 @@ compatibility_flags = ["nodejs_compat"]
 # The OSS deliverable is one Worker and one D1 (spec §8). Nothing below
 # requires a paid plan; a self-hoster runs `wrangler deploy` and is done.
 
+# everycastlabs fork: this one Worker serves several of our own domains, each
+# skinned differently — see src/adapters/brands.ts. Every domain still shares
+# this exact deployment (one D1, one set of users/bookings; not multi-tenant,
+# just multi-skin), so a new brand needs a Custom Domain routed here, not a
+# new `wrangler deploy`. Add it either in the dashboard (Workers & Pages →
+# this Worker → Settings → Domains & Routes → Custom Domain) or here:
+#
+# [[routes]]
+# pattern = "cal.scoutsuite.app"
+# custom_domain = true
+#
+# [[routes]]
+# pattern = "cal.vcon.store"
+# custom_domain = true
+#
+# Left commented until the zones are actually added to this Cloudflare
+# account — an uncommented route for a domain not on the account fails
+# `wrangler deploy` outright.
+
 # Self-hosted OFL font files (docs/branding/brand.md), served directly by
 # Cloudflare's asset edge — never the Worker — so the brand typography loads
 # without a third-party font CDN call. Requests under /fonts/* are the only

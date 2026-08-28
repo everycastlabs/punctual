@@ -700,6 +700,7 @@ async function createBooking(
     guestTimezone: input.guestTimezone ?? user.tz,
     answers: declaredAnswers,
     idempotencyKey: input.idempotencyKey,
+    brandHost: deps.ports.config.brandHost,
   })
 
   if (!outcome.ok) return toolError(failureMessage(outcome.reason, outcome.detail))
@@ -751,6 +752,7 @@ async function rescheduleBooking(
     guestTimezone: original.guestTimezone,
     answers: original.answers,
     rescheduleOf: original.id,
+    brandHost: original.brandHost ?? deps.ports.config.brandHost,
   })
   if (!outcome.ok) return toolError(failureMessage(outcome.reason, outcome.detail))
 

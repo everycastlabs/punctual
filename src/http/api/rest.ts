@@ -1055,6 +1055,7 @@ export function buildApiRoutes(ports: EnginePorts, slots: SlotService): Hono<Api
       // §4), so a retried POST returns the booking it already made instead of
       // making a second one.
       idempotencyKey: c.req.header('idempotency-key') ?? undefined,
+      brandHost: ports.config.brandHost,
     })
 
     if (!outcome.ok) return bookingFailure(outcome.reason, outcome.detail)
@@ -1152,6 +1153,8 @@ export function buildApiRoutes(ports: EnginePorts, slots: SlotService): Hono<Api
       answers: original.answers,
       rescheduleOf: original.id,
       idempotencyKey: c.req.header('idempotency-key') ?? undefined,
+      // The ORIGINAL booking's brand — see the same choice in dashboard-routes.ts's guest reschedule.
+      brandHost: original.brandHost ?? ports.config.brandHost,
     })
     if (!outcome.ok) return bookingFailure(outcome.reason, outcome.detail)
 

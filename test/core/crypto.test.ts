@@ -378,10 +378,13 @@ describe('Cloudflare Email Service sender', () => {
     expect(seen.to).toBe('g@example.com')
   })
 
-  it('uses {content, filename, type, disposition} for attachments', async () => {
+  it('uses {content, filename, type, disposition} for attachments, decoded to raw text', async () => {
     // Same stakes as the Brevo case: every booking email carries the .ics, and
     // `type`/`filename` here are named differently from both other providers.
-    // The base64 string crosses untouched — no decode/re-encode round trip.
+    // Unlike Resend/Brevo, the Workers binding treats a string `content` as
+    // RAW content, not base64 — so the base64 the attachment arrives as must
+    // be decoded back to the original text before it reaches the binding, or
+    // the guest's calendar app receives the base64 string itself as the .ics.
     const seen = await capture({
       to: 'g@example.com',
       subject: 'Booked',
@@ -390,7 +393,7 @@ describe('Cloudflare Email Service sender', () => {
       attachments: [{ filename: 'invite.ics', content: 'QkVHSU46VkNBTEVOREFS', contentType: 'text/calendar' }],
     })
     expect(seen.attachments).toEqual([
-      { content: 'QkVHSU46VkNBTEVOREFS', filename: 'invite.ics', type: 'text/calendar', disposition: 'attachment' },
+      { content: 'BEGIN:VCALENDAR', filename: 'invite.ics', type: 'text/calendar', disposition: 'attachment' },
     ])
   })
 

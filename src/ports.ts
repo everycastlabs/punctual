@@ -618,6 +618,17 @@ export interface EmailMessage {
   text: string
   attachments?: Array<{ filename: string; content: string; contentType: string }>
   replyTo?: string
+  /**
+   * Overrides the sender's own configured `from`/`fromName` for this one
+   * message. Needed because a queued message (ADR-0006) is sent later by
+   * whichever `EmailSender` instance the queue consumer's `buildPorts` call
+   * constructed, which — for a multi-brand deployment (`EngineConfig.theme`)
+   * — is not necessarily the same brand the guest was looking at when the
+   * message was composed and enqueued. Unset falls back to the sender's own
+   * default, unchanged from before this field existed.
+   */
+  from?: string
+  fromName?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -800,6 +811,8 @@ export interface BookingAttempt {
   idempotencyKey?: string
   holdId?: string
   rescheduleOf?: string
+  /** See `Booking.brandHost` — the caller's own `EngineConfig.brandHost`, so the reminders cron can re-resolve this exact brand later. */
+  brandHost?: string | null
 }
 
 export type BookingOutcome =
@@ -902,6 +915,78 @@ export interface EngineConfig {
    * injected, and never one pointed at this project's own GA property.
    */
   analyticsId?: string
+  /**
+   * A per-domain skin — colors, fonts, radius — resolved from the `Host`
+   * header alongside the rest of this config (see `src/adapters/brands.ts`).
+   * Unset renders Punctual's own default palette; this is what lets one
+   * deployment serve several branded domains (e.g. `cal.scoutsuite.app`,
+   * `cal.vcon.store`) without a fork or a tenant concept — every domain
+   * shares the same single-tenant engine and data, only the CSS varies.
+   */
+  theme?: BrandTheme
+  /**
+   * The `Host` header this config was resolved from (see
+   * `src/adapters/brands.ts`'s `resolveBrand`) — `undefined` when there was
+   * no live request (the queue consumer, the scheduled-tasks cron). Stamped
+   * onto a `Booking` at creation (`Booking.brandHost`) so a later reminder,
+   * with no request of its own, can re-resolve the SAME brand rather than
+   * always falling back to the default.
+   */
+  brandHost?: string
+}
+
+/**
+ * A brand's primitives — the small set of values a per-domain skin actually
+ * needs to override. Everything else in `styles.ts`'s TOKENS (the semantic
+ * surface/text/border/status/slot layer, all `var()` onto these) re-derives
+ * automatically — a brand never touches it directly.
+ *
+ * Lives here rather than in `http/styles.ts` because `EngineConfig` (an HTTP
+ * concern in content, an engine-config concern in this codebase's layering)
+ * needs the type and nothing in `http/` may be imported from this file —
+ * see this file's own top-of-file doc comment. `styles.ts` re-exports both
+ * types from here rather than defining its own.
+ */
+export interface BrandTokens {
+  inkPrimary?: string
+  inkSecondary?: string
+  paper?: string
+  paperDim?: string
+  line?: string
+  accent?: string
+  accentStrong?: string
+  signal?: string
+  accentTint?: string
+  danger?: string
+  dangerStrong?: string
+  dangerText?: string
+  dangerTint?: string
+  accentFill?: string
+  accentFillHover?: string
+  warn?: string
+  warnText?: string
+  warnTint?: string
+  fontDisplay?: string
+  fontUi?: string
+  fontMono?: string
+  radius?: string
+  radiusLg?: string
+}
+
+export interface BrandTheme {
+  tokens?: BrandTokens
+  /**
+   * Raw replacement for the whole dark-mode block (both the `@media` and
+   * `[data-theme=dark]` selectors) — full CSS including selectors. A dark
+   * palette is rarely a mechanical remap of the light one, so this is a full
+   * override rather than a per-token merge. Falls back to Punctual's own
+   * dark block when unset.
+   */
+  darkBlockCss?: string
+  /** Raw replacement for FONT_FACES — only needed when a brand vendors its own font files under assets/fonts/. */
+  fontFaces?: string
+  /** Font file paths (under /fonts/) to `<link rel=preload>` in the page head — must match whichever faces `fontFaces` declares. Defaults to Punctual's own three faces. */
+  fontPreloads?: string[]
 }
 
 // ---------------------------------------------------------------------------

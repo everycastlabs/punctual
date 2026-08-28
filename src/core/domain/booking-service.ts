@@ -51,6 +51,8 @@ export interface BookingRequest {
   bookingId: string
   manageTokenHash: string
   rescheduleOf?: string | null
+  /** See `Booking.brandHost`. */
+  brandHost?: string | null
   /** Round-robin ordering input: teamId + last-assigned times. */
   rrContext?: { teamId: string; members: TeamMember[]; lastAssignedAt: Map<string, number> }
 }
@@ -225,6 +227,7 @@ export function prepareBooking(req: BookingRequest): BookingResult {
     manageTokenHash: req.manageTokenHash,
     cancelledAt: null,
     createdAt: now,
+    brandHost: req.brandHost ?? null,
   }
 
   return { ok: true, booking, buckets }

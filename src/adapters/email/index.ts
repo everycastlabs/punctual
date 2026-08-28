@@ -25,7 +25,7 @@ export function createResendSender(opts: ResendOptions): EmailSender {
   return {
     async send(message) {
       const body: Record<string, unknown> = {
-        from: formatAddress(opts.from, opts.fromName),
+        from: formatAddress(message.from ?? opts.from, message.fromName ?? opts.fromName),
         to: [formatAddress(message.to, message.toName)],
         subject: message.subject,
         html: message.html,
@@ -74,6 +74,7 @@ export function createConsoleSender(): EmailSender {
       // logging their contents would bury the log.
       const attachments = (message.attachments ?? []).map((a) => `${a.filename} (${a.contentType})`)
       console.log('[email]', {
+        ...(message.from ? { from: message.fromName ? `${message.fromName} <${message.from}>` : message.from } : {}),
         to: message.toName ? `${message.toName} <${message.to}>` : message.to,
         subject: message.subject,
         replyTo: message.replyTo,
@@ -132,7 +133,10 @@ export function createBrevoSender(opts: BrevoOptions): EmailSender {
       // CR/LF smuggled through here becomes a header-injection vector at the
       // provider even though our own request body is well-formed JSON.
       const body: Record<string, unknown> = {
-        sender: { email: sanitizeHeader(opts.from), name: sanitizeHeader(opts.fromName) },
+        sender: {
+          email: sanitizeHeader(message.from ?? opts.from),
+          name: sanitizeHeader(message.fromName ?? opts.fromName),
+        },
         to: [
           {
             email: sanitizeHeader(message.to),
@@ -201,10 +205,14 @@ export interface CloudflareOptions {
  *      banner exists to prevent. Hence the error wrapping below: the platform
  *      reports this as a specific, recognisable failure, and it must reach the
  *      operator's log saying what to do, not as a bare 500.
- *   2. **Attachment `content` is a base64 string.** Which is already how
- *      `EmailMessage.attachments` carries the .ics, so it maps across
- *      untouched — no decode/re-encode round trip that could corrupt a
- *      calendar invite.
+ *   2. **Attachment `content` accepts `string | ArrayBuffer | ArrayBufferView`,
+ *      and a string is treated as RAW content, not base64** — the opposite of
+ *      Resend/Brevo's REST APIs (and the opposite of what this binding's own
+ *      `content` field name suggests). `EmailMessage.attachments[].content`
+ *      arrives base64-encoded (see notify.ts's `base64()`, matching what the
+ *      other two senders need), so it is decoded back to a UTF-8 string here
+ *      — passing the base64 string through unchanged would attach the
+ *      base64 text itself as the .ics, not the calendar invite it encodes.
  *
  * Delivery failures throw, like the other two senders, so the queue consumer
  * retries rather than a transient blip becoming a permanently missing
@@ -235,8 +243,8 @@ export function createCloudflareSender(opts: CloudflareOptions): EmailSender {
           ...(message.attachments?.length
             ? {
                 attachments: message.attachments.map((a) => ({
-                  // Already base64 at the port boundary — see note 2 above.
-                  content: a.content,
+                  // Decoded back to raw text — see note 2 above.
+                  content: base64ToUtf8(a.content),
                   filename: a.filename,
                   type: a.contentType,
                   disposition: 'attachment' as const,
@@ -259,4 +267,11 @@ export function createCloudflareSender(opts: CloudflareOptions): EmailSender {
       }
     },
   }
+}
+
+/** Inverse of notify.ts's `base64()` — UTF-8 bytes back out, not code units. */
+function base64ToUtf8(b64: string): string {
+  const binary = atob(b64)
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
 }

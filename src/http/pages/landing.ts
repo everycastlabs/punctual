@@ -17,7 +17,7 @@
  */
 
 import { escapeHtml, PUNCTUAL_SITE_URL } from './booking.js'
-import { pageCss, LANDING_CSS } from '../styles.js'
+import { DEFAULT_FONT_PRELOADS, pageCss, LANDING_CSS, type BrandTheme } from '../styles.js'
 
 export interface LandingPageOptions {
   brandName: string
@@ -35,6 +35,8 @@ export interface LandingPageOptions {
   operator?: string
   /** GA4 measurement id (EngineConfig.analyticsId) — see `analyticsTag`. */
   analyticsId?: string
+  /** Per-domain skin (see `src/adapters/brands.ts`). Unset renders Punctual's own default palette/fonts. */
+  theme?: BrandTheme
 }
 
 export interface CalendlyAlternativePageOptions {
@@ -43,6 +45,7 @@ export interface CalendlyAlternativePageOptions {
   githubUrl?: string
   operator?: string
   analyticsId?: string
+  theme?: BrandTheme
 }
 
 /**
@@ -72,7 +75,14 @@ gtag('config', '${safeId}');
 
 /** Exported for pages/docs.ts: the docs pages want the exact same page frame. */
 export function shell(
-  opts: { title: string; description: string; baseUrl: string; path?: string; analyticsId?: string },
+  opts: {
+    title: string
+    description: string
+    baseUrl: string
+    path?: string
+    analyticsId?: string
+    theme?: BrandTheme
+  },
   body: string,
 ): string {
   const origin = opts.baseUrl.replace(/\/$/, '')
@@ -109,12 +119,10 @@ ${analyticsTag(opts.analyticsId)}
 <!-- All faces, same reasoning as shellHead in booking.ts: with
      font-display:optional the first paint is final, so anything not
      preloaded is likely never seen on a cold cache. -->
-<link rel="preload" href="/fonts/inter-variable.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/schibstedgrotesk-600.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/ibmplexmono-400.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/ibmplexmono-600.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/ibmplexmono-700.woff2" as="font" type="font/woff2" crossorigin>
-<style>${pageCss()}${LANDING_CSS}</style>
+${(opts.theme?.fontPreloads ?? DEFAULT_FONT_PRELOADS)
+  .map((href) => `<link rel="preload" href="${href}" as="font" type="font/woff2" crossorigin>`)
+  .join('\n')}
+<style>${pageCss(opts.theme)}${LANDING_CSS}</style>
 </head>
 <body>
 ${body}
@@ -295,6 +303,7 @@ ${footer(githubUrl, opts.operator)}
       baseUrl: opts.baseUrl,
       path: '/',
       analyticsId: opts.analyticsId,
+      theme: opts.theme,
     },
     body,
   )
@@ -388,6 +397,7 @@ ${footer(githubUrl, opts.operator)}
       baseUrl: opts.baseUrl,
       path: '/calendly-alternative',
       analyticsId: opts.analyticsId,
+      theme: opts.theme,
     },
     body,
   )

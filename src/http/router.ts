@@ -115,6 +115,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
         ...(ports.config.demoBookingPath ? { demoPath: ports.config.demoBookingPath } : {}),
         ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
         ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
+        theme: ports.config.theme,
       }),
     )
   })
@@ -125,6 +126,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
         baseUrl: ports.config.baseUrl,
         ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
         ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
+        theme: ports.config.theme,
       }),
     ),
   )
@@ -135,6 +137,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
         baseUrl: ports.config.baseUrl,
         ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
         ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
+        theme: ports.config.theme,
       }),
     ),
   )
@@ -145,6 +148,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
         baseUrl: ports.config.baseUrl,
         ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
         ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
+        theme: ports.config.theme,
       }),
     ),
   )
@@ -155,6 +159,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
         baseUrl: ports.config.baseUrl,
         ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
         ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
+        theme: ports.config.theme,
       }),
     ),
   )
@@ -165,6 +170,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
         baseUrl: ports.config.baseUrl,
         ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),
         ...(ports.config.analyticsId ? { analyticsId: ports.config.analyticsId } : {}),
+        theme: ports.config.theme,
       }),
     ),
   )
@@ -203,6 +209,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
         title: `Privacy · ${ports.config.brandName}`,
         brandName: ports.config.brandName,
         canonical: `${ports.config.baseUrl.replace(/\/$/, '')}/privacy`,
+        theme: ports.config.theme,
       }) +
         privacyPage(legal()) +
         shellFoot(),
@@ -214,6 +221,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
         title: `Terms · ${ports.config.brandName}`,
         brandName: ports.config.brandName,
         canonical: `${ports.config.baseUrl.replace(/\/$/, '')}/terms`,
+        theme: ports.config.theme,
       }) +
         termsPage(legal()) +
         shellFoot(),
@@ -364,6 +372,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
         title: `${eventType.title} · ${team ? (team.showName === false ? ports.config.brandName : team.name) : host.name || host.slug}`,
         description: eventType.description || undefined,
         brandName: ports.config.brandName,
+        theme: ports.config.theme,
         // The one link that's actually meant to be shared — a host posts it
         // in an email signature or a chat app, so it's the one page in the
         // whole engine worth unfurling. /og/:userSlug/:eventSlug.png
@@ -454,7 +463,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
     }
 
     const html =
-      shellHead({ title: `Confirm · ${eventType.title}`, brandName: ports.config.brandName }) +
+      shellHead({ title: `Confirm · ${eventType.title}`, brandName: ports.config.brandName, theme: ports.config.theme }) +
       eventHeader(data) +
       hostsRow(data) +
       confirmForm(data, start) +
@@ -473,7 +482,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
     const limit = await ports.rateLimiter.check('booking:ip', ip, 10, 3600)
     if (!limit.allowed) {
       return c.html(
-        shellHead({ title: 'Too many requests', brandName: ports.config.brandName }) +
+        shellHead({ title: 'Too many requests', brandName: ports.config.brandName, theme: ports.config.theme }) +
           errorPage('Too many bookings', 'Please wait a little and try again.') +
           shellFoot(),
         429,
@@ -535,7 +544,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
 
     if (Object.keys(errors).length > 0) {
       return c.html(
-        shellHead({ title: `Confirm · ${eventType.title}`, brandName: ports.config.brandName }) +
+        shellHead({ title: `Confirm · ${eventType.title}`, brandName: ports.config.brandName, theme: ports.config.theme }) +
           eventHeader(data) +
           // `declared` (not raw `answers`): a stale-form submission that
           // posted under the built-in q_agenda key while the event type's
@@ -560,6 +569,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
       answers: declared,
       holdId,
       idempotencyKey: c.req.header('idempotency-key') ?? undefined,
+      brandHost: ports.config.brandHost,
     })
 
     if (!outcome.ok) {
@@ -570,7 +580,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
           ? slotTakenPage(data, localDateString(start, guestTimezone))
           : errorPage('Could not complete booking', outcome.detail ?? 'Please try another time.')
       return c.html(
-        shellHead({ title: 'Time unavailable', brandName: ports.config.brandName }) +
+        shellHead({ title: 'Time unavailable', brandName: ports.config.brandName, theme: ports.config.theme }) +
           eventHeader(data) +
           body +
           shellFoot(true, embed, displayCompany(data)),
@@ -584,7 +594,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
       `${ports.config.baseUrl}/booking/${outcome.booking.id}` +
       (outcome.manageToken ? `?token=${encodeURIComponent(outcome.manageToken)}` : '')
     return c.html(
-      shellHead({ title: 'Booked', brandName: ports.config.brandName }) +
+      shellHead({ title: 'Booked', brandName: ports.config.brandName, theme: ports.config.theme }) +
         bookedConfirmation({
           eventTitle: eventType.title,
           // Who actually attends — the round-robin pick, or the required
@@ -660,7 +670,7 @@ function validDate(v: string | undefined): string | undefined {
 /** Hono's `c.html` can return a promise, so the helper mirrors that. */
 function notFound(c: Context<{ Bindings: Env }>, ports: EnginePorts): Response | Promise<Response> {
   return c.html(
-    shellHead({ title: 'Not found', brandName: ports.config.brandName }) +
+    shellHead({ title: 'Not found', brandName: ports.config.brandName, theme: ports.config.theme }) +
       errorPage('Not found', 'That booking page does not exist.') +
       shellFoot(),
     404,
@@ -696,7 +706,7 @@ async function bookingPageRateLimited(
   const limit = await ports.rateLimiter.check('booking_page:ip', ip, 120, 60)
   if (limit.allowed) return undefined
   return c.html(
-    shellHead({ title: 'Too many requests', brandName: ports.config.brandName }) +
+    shellHead({ title: 'Too many requests', brandName: ports.config.brandName, theme: ports.config.theme }) +
       errorPage('Too many requests', 'Please wait a little and try again.') +
       shellFoot(),
     429,

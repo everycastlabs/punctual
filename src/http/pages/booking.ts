@@ -23,7 +23,7 @@ import { effectiveQuestions } from '../../core/domain/booking-service.js'
 import { slotStateClassName } from '../../core/slot-state.js'
 import { formatInZone, localDateString, offsetLabel } from '../../core/time/zone.js'
 import { embedResizeScriptTag } from '../embed.js'
-import { pageCss } from '../styles.js'
+import { DEFAULT_FONT_PRELOADS, pageCss, type BrandTheme } from '../styles.js'
 
 /**
  * The wordmark in a public-facing footer always points here, not at `/` —
@@ -47,6 +47,8 @@ export interface PageChrome {
   description?: string
   brandName: string
   themeColor?: string
+  /** Per-domain skin (see `src/adapters/brands.ts`). Unset renders Punctual's own default palette/fonts. */
+  theme?: BrandTheme
   /**
    * Open Graph / Twitter card. Deliberately opt-in, not automatic: a
    * dashboard or guest-manage page carries a session or a guest's own manage
@@ -110,12 +112,10 @@ ${chrome.description ? `<meta name="twitter:description" content="${escapeHtml(c
      the first paint is final, so a face that isn't preloaded is a face the
      visitor likely never sees on a cold cache. Inter carries all body text —
      leaving it out is what made whole pages repaint mid-view. -->
-<link rel="preload" href="/fonts/inter-variable.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/schibstedgrotesk-600.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/ibmplexmono-400.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/ibmplexmono-600.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/ibmplexmono-700.woff2" as="font" type="font/woff2" crossorigin>
-<style>${pageCss()}</style>
+${(chrome.theme?.fontPreloads ?? DEFAULT_FONT_PRELOADS)
+  .map((href) => `<link rel="preload" href="${href}" as="font" type="font/woff2" crossorigin>`)
+  .join('\n')}
+<style>${pageCss(chrome.theme)}</style>
 </head>
 <body>
 <div class="pu-wrap">`

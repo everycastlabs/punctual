@@ -17,6 +17,7 @@ import { createKvBlobCache } from './adapters/cache/kv-blob.js'
 import { createR2BlobStorage } from './adapters/storage/r2-blob.js'
 import { createBrevoSender, createCloudflareSender, createConsoleSender, createResendSender } from './adapters/email/index.js'
 import { selectEmailDelivery } from './adapters/email/select.js'
+import { resolveBrand } from './adapters/brands.js'
 import { createEnvOAuthCredentials } from './adapters/oauth.js'
 import { createCalendarProviders } from './adapters/providers.js'
 import { createCoordinator } from './adapters/coordinator.js'
@@ -65,8 +66,22 @@ export interface Env {
   MICROSOFT_CLIENT_SECRET?: string
 }
 
-export function buildPorts(env: Env): EnginePorts {
-  const baseUrl = env.BASE_URL ?? 'http://localhost:8787'
+/**
+ * `request` is absent for the two callers with no live HTTP request (the
+ * queue consumer and the scheduled-tasks cron below) — `resolveBrand` falls
+ * back to the `wrangler.toml`-configured default brand for both. Neither
+ * needs better than that: a queued booking email already carries its own
+ * from-address per message (`EmailMessage.from`), composed at enqueue time
+ * from whichever request's brand created it; the reminders cron
+ * (`runScheduledTasks` in `adapters/scheduled.ts`) re-resolves each due
+ * booking's OWN brand itself, from `Booking.brandHost`, rather than using
+ * this ambient one — the `ports` this function returns is only what the
+ * cron's non-email plumbing (D1 access, OAuth token refresh) needs.
+ */
+export function buildPorts(env: Env, request?: Request): EnginePorts {
+  const host = request ? new URL(request.url).hostname : null
+  const brand = resolveBrand(host, env)
+  const baseUrl = brand.baseUrl ?? 'http://localhost:8787'
   // Fail fast on the template's placeholder rather than quietly building
   // every magic-link, OAuth callback and manage URL against it — a deploy
   // whose links all dead-end is far harder to diagnose than this error.
@@ -127,8 +142,8 @@ export function buildPorts(env: Env): EnginePorts {
   // sender logs, so a self-hoster has a working product on day one and can
   // add deliverability later (ADR-0003 — the port exists so this is a choice,
   // not a gate).
-  const emailFrom = env.FROM_EMAIL ?? 'hello@example.com'
-  const emailFromName = env.FROM_NAME ?? 'Punctual'
+  const emailFrom = brand.fromEmail
+  const emailFromName = brand.fromName
   // Resolved ONCE, next to the sender it describes, so the two cannot drift:
   // a mode that claimed 'brevo' while the console sender was actually wired
   // would be worse than no signal at all.
@@ -181,17 +196,19 @@ export function buildPorts(env: Env): EnginePorts {
     rateLimiter,
     config: {
       baseUrl,
-      brandName: env.BRAND_NAME ?? 'Punctual',
-      ...(env.LEGAL_OPERATOR ? { legalOperator: env.LEGAL_OPERATOR } : {}),
-      ...(env.DEMO_BOOKING_PATH ? { demoBookingPath: env.DEMO_BOOKING_PATH } : {}),
-      ...(env.GA_MEASUREMENT_ID ? { analyticsId: env.GA_MEASUREMENT_ID } : {}),
+      brandName: brand.brandName,
+      ...(brand.legalOperator ? { legalOperator: brand.legalOperator } : {}),
+      ...(brand.demoBookingPath ? { demoBookingPath: brand.demoBookingPath } : {}),
+      ...(brand.analyticsId ? { analyticsId: brand.analyticsId } : {}),
       ...(env.SIGNUPS ? { signupPolicy: parseSignupPolicy(env.SIGNUPS) } : {}),
-      supportEmail: env.SUPPORT_EMAIL ?? 'hello@example.com',
-      fromEmail: env.FROM_EMAIL ?? 'hello@example.com',
-      fromName: env.FROM_NAME ?? 'Punctual',
+      supportEmail: brand.supportEmail,
+      fromEmail: brand.fromEmail,
+      fromName: brand.fromName,
       emailDelivery,
       ...(emailProblem ? { emailProblem } : {}),
       telemetryEnabled: env.TELEMETRY_ENABLED === '1',
+      ...(brand.theme ? { theme: brand.theme } : {}),
+      ...(host ? { brandHost: host } : {}),
     },
     // Constructed last: it needs the other ports.
     coordinator: undefined as never,
@@ -209,7 +226,7 @@ export function buildPorts(env: Env): EnginePorts {
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const engine = createEngine(buildPorts(env))
+    const engine = createEngine(buildPorts(env, request))
     return engine.fetch(request, env, ctx)
   },
 
@@ -239,7 +256,7 @@ export default {
       // The catch below only covers synchronous buildPorts; the task's own
       // rejection has to be caught on the promise handed to waitUntil.
       ctx.waitUntil(
-        runScheduledTasks(buildPorts(env), event.scheduledTime).catch((err) =>
+        runScheduledTasks(buildPorts(env), event.scheduledTime, env).catch((err) =>
           console.error('[punctual] scheduled tasks failed', err),
         ),
       )

@@ -1,0 +1,21 @@
+-- everycastlabs fork: which domain a booking was made under (multi-brand,
+-- single-tenant deployment — see src/adapters/brands.ts). Stamped once at
+-- creation from the live request's Host header, same way `local_date`
+-- above is stamped rather than derived.
+--
+-- Needed for the reminders cron (src/adapters/scheduled.ts): a queued
+-- confirmation/cancellation/reschedule email already carries its own
+-- from-address per message (EmailMessage.from), because it is composed
+-- during a live request that knows its own brand. A reminder is composed
+-- LATER, on a 5-minute tick with no request at all — this column is what
+-- lets that tick re-resolve the SAME brand a live request would have, via
+-- resolveBrand(booking.brand_host, env), instead of always falling back to
+-- the deployment's default brand.
+--
+-- NULLable and left NULL on backfill, deliberately: an existing booking's
+-- brand was never recorded and cannot be recovered, so its reminders keep
+-- rendering as the default brand exactly as they do today — this migration
+-- changes nothing about how already-committed bookings will send.
+--
+-- Forward-only and additive (ADR-0006 §4).
+ALTER TABLE bookings ADD COLUMN brand_host TEXT;

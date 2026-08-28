@@ -2975,6 +2975,12 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
       guestTimezone: old.guestTimezone,
       answers: old.answers,
       rescheduleOf: old.id,
+      // The ORIGINAL booking's brand, not whichever domain happens to be
+      // serving this reschedule request — a moved meeting should stay
+      // associated with the brand it was made under, not silently switch
+      // because a manage link (or the host dashboard) was opened on a
+      // different domain.
+      brandHost: old.brandHost ?? ports.config.brandHost,
     })
     if (!outcome.ok) return { ok: false, reason: 'slot_taken' }
 

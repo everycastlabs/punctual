@@ -7,16 +7,24 @@
  */
 
 import type { EnginePorts } from '../ports.js'
+import { resolveBrand, type DefaultBrandEnv } from './brands.js'
 
 const MINUTE = 60_000
 const HOUR = 3_600_000
 const DAY = 86_400_000
 
-export async function runScheduledTasks(ports: EnginePorts, now: number): Promise<void> {
+/**
+ * `env` is the raw brand-resolution input (see `resolveBrand`), separate
+ * from `ports.config` — a cron tick has no live request, so `ports.config`
+ * itself already fell back to the default brand at `buildPorts` time, and
+ * `sendReminders` needs to re-resolve a DIFFERENT brand per booking (see
+ * `Booking.brandHost`), not the one ambient `ports` was built with.
+ */
+export async function runScheduledTasks(ports: EnginePorts, now: number, env: DefaultBrandEnv): Promise<void> {
   const tasks: Array<[string, Promise<unknown>]> = [
     ['expire-holds', expireHolds(ports, now)],
     ['prune-locks', pruneLocks(ports, now)],
-    ['reminders', sendReminders(ports, now)],
+    ['reminders', sendReminders(ports, now, env)],
   ]
   if (ports.config.telemetryEnabled) tasks.push(['telemetry', sendTelemetry(ports, now)])
 
@@ -60,7 +68,7 @@ async function pruneLocks(ports: EnginePorts, now: number): Promise<void> {
  * we look for meetings starting within [target, target + 5 min). Widening it
  * would double-send; narrowing it would drop reminders on a slow tick.
  */
-async function sendReminders(ports: EnginePorts, now: number): Promise<void> {
+async function sendReminders(ports: EnginePorts, now: number, env: DefaultBrandEnv): Promise<void> {
   const repos = ports.repositories({ consistency: 'unconstrained' })
   const windows: Array<{ label: '24h' | '1h'; from: number; to: number }> = [
     { label: '24h', from: now + DAY, to: now + DAY + 5 * MINUTE },
@@ -80,6 +88,12 @@ async function sendReminders(ports: EnginePorts, now: number): Promise<void> {
       ])
       if (!eventType || !host) continue
 
+      // The booking's OWN brand, not the ambient `ports.config` this cron
+      // tick's `buildPorts` happened to resolve (there is no live request
+      // here, so that would always be the default brand) — see
+      // `Booking.brandHost`.
+      const brand = resolveBrand(booking.brandHost ?? null, env)
+
       // Rendered for the GUEST, so times appear in the guest's timezone.
       const mail = bookingReminder({
         booking,
@@ -87,8 +101,8 @@ async function sendReminders(ports: EnginePorts, now: number): Promise<void> {
         host,
         audience: 'guest',
         when: w.label,
-        brandName: ports.config.brandName,
-        supportEmail: ports.config.supportEmail,
+        brandName: brand.brandName,
+        supportEmail: brand.supportEmail,
       })
 
       await ports.queue.send({
@@ -96,6 +110,8 @@ async function sendReminders(ports: EnginePorts, now: number): Promise<void> {
         message: {
           to: booking.guestEmail,
           toName: booking.guestName,
+          from: brand.fromEmail,
+          fromName: brand.fromName,
           subject: mail.subject,
           html: mail.html,
           text: mail.text,

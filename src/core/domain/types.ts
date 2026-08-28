@@ -256,6 +256,14 @@ export interface Booking {
   manageTokenHash: string
   cancelledAt: number | null
   createdAt: number
+  /**
+   * Which domain this booking was made under (everycastlabs fork's
+   * multi-brand deployment — see `src/adapters/brands.ts`). `null` for a
+   * booking made before this field existed, or with no live request to
+   * resolve a Host from (e.g. seeded by a script) — its reminders fall back
+   * to the deployment's default brand.
+   */
+  brandHost?: string | null
 }
 
 export interface SlotHold {

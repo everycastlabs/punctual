@@ -125,6 +125,8 @@ export async function notifyBookingCreated(ctx: NotifyContext): Promise<void> {
         message: {
           to: booking.guestEmail,
           toName: booking.guestName,
+          from: ports.config.fromEmail,
+          fromName: ports.config.fromName,
           subject: guest.subject,
           html: guest.html,
           text: guest.text,
@@ -138,6 +140,8 @@ export async function notifyBookingCreated(ctx: NotifyContext): Promise<void> {
         message: {
           to: host.email,
           toName: host.name || host.slug,
+          from: ports.config.fromEmail,
+          fromName: ports.config.fromName,
           subject: hostMail.subject,
           html: hostMail.html,
           text: hostMail.text,
@@ -356,6 +360,8 @@ export async function notifyBookingCancelled(ctx: {
         message: {
           to: booking.guestEmail,
           toName: booking.guestName,
+          from: ports.config.fromEmail,
+          fromName: ports.config.fromName,
           subject: guest.subject,
           html: guest.html,
           text: guest.text,
@@ -369,6 +375,8 @@ export async function notifyBookingCancelled(ctx: {
         message: {
           to: host.email,
           toName: host.name || host.slug,
+          from: ports.config.fromEmail,
+          fromName: ports.config.fromName,
           subject: hostMail.subject,
           html: hostMail.html,
           text: hostMail.text,
@@ -435,6 +443,8 @@ export async function notifyBookingRescheduled(ctx: {
         message: {
           to: booking.guestEmail,
           toName: booking.guestName,
+          from: ports.config.fromEmail,
+          fromName: ports.config.fromName,
           subject: guest.subject,
           html: guest.html,
           text: guest.text,
@@ -448,6 +458,8 @@ export async function notifyBookingRescheduled(ctx: {
         message: {
           to: host.email,
           toName: host.name || host.slug,
+          from: ports.config.fromEmail,
+          fromName: ports.config.fromName,
           subject: hostMail.subject,
           html: hostMail.html,
           text: hostMail.text,

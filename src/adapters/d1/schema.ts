@@ -217,6 +217,14 @@ export const bookings = sqliteTable(
      * pins the date to the timezone in force when the booking was made.
      */
     localDate: text('local_date').notNull().default(''),
+    /**
+     * Which domain this booking was made under (everycastlabs fork's
+     * multi-brand deployment — see src/adapters/brands.ts). Nullable: a
+     * booking made before this column existed, or on a deployment with no
+     * brand registry, has none, and reminders for it fall back to the
+     * default brand — see migrations/0009_booking_brand_host.sql.
+     */
+    brandHost: text('brand_host'),
     status: text('status').notNull().default('confirmed'),
     answersJson: text('answers_json').notNull().default('{}'),
     externalEventIdsJson: text('external_event_ids_json').notNull().default('{}'),

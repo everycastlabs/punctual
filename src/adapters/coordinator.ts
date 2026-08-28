@@ -187,6 +187,7 @@ export function createCoordinator(deps: CoordinatorDeps): HostCoordinator {
           rescheduleOf: request.rescheduleOf ?? null,
           rrContext,
           expectedHostCount: requiredCount,
+          brandHost: request.brandHost ?? null,
         })
 
         if (!prepared.ok) {

@@ -20,6 +20,7 @@
 
 import { escapeHtml } from './booking.js'
 import { DEFAULT_GITHUB_URL, footer, shell } from './landing.js'
+import type { BrandTheme } from '../styles.js'
 
 export interface DocsPageOptions {
   brandName: string
@@ -27,6 +28,7 @@ export interface DocsPageOptions {
   githubUrl?: string
   operator?: string
   analyticsId?: string
+  theme?: BrandTheme
 }
 
 interface DocsNavItem {
@@ -93,6 +95,7 @@ ${footer(githubUrl, opts.operator)}
       baseUrl: opts.baseUrl,
       path: activePath,
       analyticsId: opts.analyticsId,
+      theme: opts.theme,
     },
     body,
   )

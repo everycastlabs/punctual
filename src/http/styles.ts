@@ -47,171 +47,47 @@ export const FONT_FACES = `
   unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 `
 
-export const TOKENS = `
-:root{
-  --pu-ink-950:#0F1512; --pu-ink-900:#17201B; --pu-ink-700:#2E3B34;
-  --pu-ink-500:#5C6660; --pu-paper:#FAFAF7; --pu-paper-dim:#F0F1EC;
-  --pu-line:#E3E5DE; --pu-green-700:#0E7C4C; --pu-green-800:#0A5C3A;
-  --pu-signal:#1FC16B; --pu-green-tint:#E4F5EC; --pu-danger:#D92D20;
-  --pu-danger-800:#B8241A; --pu-danger-text:#D92D20; --pu-danger-tint:#FBEAE8;
-  /* A solid green fill behind white/paper text (buttons, the chosen-slot dot,
-     step numbers) needs to stay this dark in EITHER theme — unlike
-     --pu-green-700/800, deliberately NOT redefined under dark mode below.
-     --pu-green-700 brightens in dark mode because it also serves as body
-     text/links there, where it must read against a dark page background;
-     that same brightening drops a filled button's white-on-green contrast
-     to ~2.4:1 (fails WCAG AA) if it shares the token. Same shades as
-     light mode's green-700/800 — those already pass comfortably (5.2:1). */
-  --pu-green-fill:#0E7C4C; --pu-green-fill-hover:#0A5C3A;
-  /* Warn — added for the semantic layer below. Fill/border stays one
-     value across themes, same discipline as --pu-green-fill above; a
-     separate -text variant is redefined per theme below because #F5A623
-     itself is ~1.9:1 on light paper (fine as a small border/icon, fails AA
-     as text) and ~9:1 on dark paper (fine either way), so light mode needs a
-     darkened amber for readable text while dark mode can stay near the
-     brand hue. */
-  --pu-warn:#F5A623; --pu-warn-text:#92400E; --pu-warn-tint:#FCEFD9;
-  --pu-font-display:"Schibsted Grotesk",system-ui,-apple-system,sans-serif;
-  --pu-font-ui:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --pu-font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-  --pu-radius:10px; --pu-radius-lg:16px;
-  --pu-shadow-sm:0 1px 2px rgba(15,21,18,.06);
-  --pu-ring:0 0 0 3px color-mix(in srgb,var(--pu-green-700) 25%,transparent);
-  /* Code blocks (docs pages): deliberately NOT redefined under the dark-mode
-     media query or [data-theme=dark] below — a code panel that's always a
-     dark "terminal" surface reads clearly against either a light or dark
-     page background, which is simpler and more reliable than trying to keep
-     a code block's syntax contrast correct across two flipped palettes. */
-  --pu-code-bg:#0F1512; --pu-code-fg:#E7F2EA; --pu-code-line:#2E3B34;
+import type { BrandTheme, BrandTokens } from '../ports.js'
 
-  /* ---------------------------------------------------------------------
-   * Semantic layer. Product UI states, one level above the raw
-   * palette above — components should reach for these, not for
-   * --pu-ink-*, --pu-green-*, --pu-danger or --pu-warn directly, so a future
-   * repaint of the brand only ever touches this block.
-   *
-   * Every value here is a var() onto a primitive already defined above
-   * (or, where a state needs a light/dark-specific reading and the flipped
-   * primitive doesn't fit, a literal redefined per theme below — never a
-   * color that exists ONLY inside a dark-mode block).
-   * ------------------------------------------------------------------- */
+export type { BrandTheme, BrandTokens }
 
-  /* Surface: canvas < raised < sunken, by how far off the base page a thing
-     sits. "raised" is the same fill as canvas on light (elevation reads via
-     --pu-shadow-sm/border, exactly how .pu-card already works) but goes
-     lighter than canvas in dark mode below, because a drop shadow barely
-     reads against a near-black page — dark-mode elevation has to come from
-     value contrast instead. "overlay" is new: nothing in the product uses a
-     modal/backdrop yet, but a scrim still needs to read as "a wash over
-     content" on either theme, so it is a plain ink-tinted rgba() in light
-     mode and a plain black rgba() in dark mode below — not composed from
-     any other token, since nothing else in the palette is meant to be used
-     at partial opacity over arbitrary content. */
-  --pu-surface-canvas:var(--pu-paper);
-  --pu-surface-raised:var(--pu-paper);
-  --pu-surface-sunken:var(--pu-paper-dim);
-  --pu-surface-overlay:rgba(15,21,18,.45);
-
-  /* Text: primary/secondary track --pu-ink-950/--pu-ink-500 verbatim — they
-     already flip for dark mode below the same way. "muted" and "disabled"
-     are new, both ink-500 with alpha baked in (not the bare token plus a
-     sibling opacity rule) so a single custom property is the full color
-     in either theme. "disabled" alpha (.45) matches the treatment
-     .pu-day[aria-disabled] already shipped; "muted" (.72) is one step above
-     it — dim enough to read as decoration, e.g. table timestamps, not body
-     copy — deliberately sub-AA at 3.2:1 (large-text tier only), same trade
-     already accepted for e.g. .pu-cal-head. */
-  --pu-text-primary:var(--pu-ink-950);
-  --pu-text-secondary:var(--pu-ink-500);
-  --pu-text-muted:rgba(92,102,96,.72);
-  --pu-text-on-accent:#FFFFFF;
-  --pu-text-disabled:rgba(92,102,96,.45);
-
-  /* Border: subtle = --pu-line's existing job. strong = a border with more
-     presence than a hairline but no status meaning (e.g. a divider that
-     needs to read on its own, not next to a card's shadow) — set to
-     --pu-ink-500 rather than a new hex, so "strong border" and "secondary
-     text" are always the same value by construction. focus reuses
-     --pu-green-700, matching :focus-visible's existing outline color below
-     — a11y focus indication is expected to borrow the accent; that is a
-     different thing from rule 1's "system states don't get the accent",
-     which is about background/fill states like held/booked, not the
-     global focus ring. */
-  --pu-border-subtle:var(--pu-line);
-  --pu-border-strong:var(--pu-ink-500);
-  --pu-border-focus:var(--pu-green-700);
-
-  /* Status: independent decisions, not aliases of whatever the marketing
-     palette (docs/branding/assets/tokens.css) happens to alias.
-     - success reuses --pu-green-700, NOT --pu-signal. --pu-signal is a
-       fixed, always-vivid accent meant for a small dot (the wordmark colon,
-       a status pip) and is never contrast-managed for use as text — using
-       it here would mean unreadable status text the day someone sets it as
-       a label color. --pu-green-700 already does the light/dark contrast
-       flip a status text color needs (5.0:1 light, 7.8:1 dark — see
-       styles.ts's own note above on why fills stay pinned but this token
-       doesn't).
-     - danger/warning follow the same shape: a text-safe color plus a light
-       tint for a badge/callout background.
-     - info deliberately has NO owned hue. The brand system is one green +
-       conventional danger/warn — a blue "info" would be a hue the
-       brand doesn't own and no page currently needs one. .pu-docs-callout
-       already renders informational asides in neutral ink-on-sunken-surface
-       with no color at all; --pu-status-info/-bg codify that as the
-       intentional choice rather than leaving it undocumented. */
-  --pu-status-success:var(--pu-green-700);
-  --pu-status-success-bg:var(--pu-green-tint);
-  --pu-status-danger:var(--pu-danger-text);
-  --pu-status-danger-bg:var(--pu-danger-tint);
-  --pu-status-warning:var(--pu-warn-text);
-  --pu-status-warning-bg:var(--pu-warn-tint);
-  --pu-status-info:var(--pu-text-secondary);
-  --pu-status-info-bg:var(--pu-surface-sunken);
-
-  /* Field: a text input's resting border, and the surface of the read-only
-     .pu-url box. In light mode both are the ordinary line and sunken
-     surface. In dark mode the card, the input and the URL box all sat
-     within a few shades of each other, so an editable field and a
-     read-only box were told apart only by the Copy button — the dark
-     override lifts the input's border and drops the URL box below the
-     canvas so each reads as what it is. */
-  --pu-field-border:var(--pu-line);
-  --pu-url-bg:var(--pu-surface-sunken);
-
-  /* Slot: the booking flow's own state machine (see src/core/slot-state.ts).
-     Rule: held/booked are visually distinct from available
-     WITHOUT the accent — the accent is the guest's own current pick
-     (hover/selected), never a system state. held borrows the warning hue
-     (in flux, someone else is mid-booking, may free up); booked borrows the
-     neutral surface/border family (settled, permanently gone — distinct
-     hue from held on purpose, so the two read as different kinds of
-     unavailable, not different intensities of the same one). past and
-     outside-notice-window are both neutral too, and stay distinguishable
-     from booked and each other structurally (see .pu-slot-past/
-     .pu-slot-outside-notice border-style/opacity in BASE_CSS below), not
-     just by color, so the distinction survives greyscale. */
-  --pu-slot-available-bg:var(--pu-surface-raised);
-  --pu-slot-available-border:var(--pu-border-subtle);
-  --pu-slot-available-text:var(--pu-text-primary);
-  --pu-slot-hover-bg:var(--pu-green-tint);
-  --pu-slot-hover-border:var(--pu-green-700);
-  --pu-slot-hover-text:var(--pu-text-primary);
-  --pu-slot-selected-bg:var(--pu-green-tint);
-  --pu-slot-selected-border:var(--pu-green-700);
-  --pu-slot-selected-text:var(--pu-text-primary);
-  --pu-slot-held-bg:var(--pu-warn-tint);
-  --pu-slot-held-border:var(--pu-warn);
-  --pu-slot-held-text:var(--pu-warn-text);
-  --pu-slot-booked-bg:var(--pu-surface-sunken);
-  --pu-slot-booked-border:var(--pu-border-subtle);
-  --pu-slot-booked-text:var(--pu-text-disabled);
-  --pu-slot-past-bg:var(--pu-surface-canvas);
-  --pu-slot-past-border:transparent;
-  --pu-slot-past-text:var(--pu-text-muted);
-  --pu-slot-outside-notice-bg:var(--pu-surface-raised);
-  --pu-slot-outside-notice-border:var(--pu-border-subtle);
-  --pu-slot-outside-notice-text:var(--pu-text-muted);
+const DEFAULT_TOKENS: Required<BrandTokens> = {
+  inkPrimary: '#0F1512',
+  inkSecondary: '#5C6660',
+  paper: '#FAFAF7',
+  paperDim: '#F0F1EC',
+  line: '#E3E5DE',
+  accent: '#0E7C4C',
+  accentStrong: '#0A5C3A',
+  // A solid green fill behind white/paper text (buttons, the chosen-slot
+  // dot, step numbers) needs to stay this dark in EITHER theme — unlike
+  // `accent`/`accentStrong`, never redefined under dark mode. `accent`
+  // brightens in dark mode because it also serves as body text/links
+  // there, where it must read against a dark page background; that same
+  // brightening drops a filled button's white-on-green contrast to ~2.4:1
+  // (fails WCAG AA) if it shares the token.
+  accentFill: '#0E7C4C',
+  accentFillHover: '#0A5C3A',
+  signal: '#1FC16B',
+  accentTint: '#E4F5EC',
+  danger: '#D92D20',
+  dangerStrong: '#B8241A',
+  dangerText: '#D92D20',
+  dangerTint: '#FBEAE8',
+  // Warn follows the same "fill stays pinned, -text flips per theme"
+  // discipline as accentFill above — see DEFAULT_DARK_BLOCK.
+  warn: '#F5A623',
+  warnText: '#92400E',
+  warnTint: '#FCEFD9',
+  fontDisplay: '"Schibsted Grotesk",system-ui,-apple-system,sans-serif',
+  fontUi: '"Inter",system-ui,-apple-system,"Segoe UI",sans-serif',
+  fontMono: '"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace',
+  radius: '10px',
+  radiusLg: '16px',
 }
+
+/** Punctual's own dark-mode block — the fallback when a brand doesn't supply `darkBlockCss`. */
+const DEFAULT_DARK_BLOCK = `
 @media (prefers-color-scheme:dark){
   :root:not([data-theme=light]){
     --pu-paper:#0F1512; --pu-paper-dim:#17201B; --pu-line:#2E3B34;
@@ -237,6 +113,99 @@ export const TOKENS = `
   --pu-field-border:#3C4A42; --pu-url-bg:#0B100D;
 }
 `
+
+/**
+ * Primitives (from `theme`, defaulting to Punctual's own) plus the semantic
+ * layer — surface/text/border/status/slot, one level above the raw palette,
+ * so components reach for e.g. `--pu-status-danger` rather than
+ * `--pu-danger-text` directly and a brand repaint only ever touches the
+ * primitives above. Every semantic value is a `var()` onto a primitive (or,
+ * where a state needs a reading the flipped primitive doesn't fit, a literal
+ * redefined per theme in `darkBlockCss`/DEFAULT_DARK_BLOCK) — never a color
+ * that exists only inside a dark-mode block.
+ */
+function tokensCss(theme?: BrandTheme): string {
+  const t: Required<BrandTokens> = { ...DEFAULT_TOKENS, ...(theme?.tokens ?? {}) }
+  return `
+:root{
+  --pu-ink-950:${t.inkPrimary}; --pu-ink-500:${t.inkSecondary};
+  --pu-paper:${t.paper}; --pu-paper-dim:${t.paperDim}; --pu-line:${t.line};
+  --pu-green-700:${t.accent}; --pu-green-800:${t.accentStrong};
+  --pu-signal:${t.signal}; --pu-green-tint:${t.accentTint}; --pu-danger:${t.danger};
+  --pu-danger-800:${t.dangerStrong}; --pu-danger-text:${t.dangerText}; --pu-danger-tint:${t.dangerTint};
+  --pu-green-fill:${t.accentFill}; --pu-green-fill-hover:${t.accentFillHover};
+  --pu-warn:${t.warn}; --pu-warn-text:${t.warnText}; --pu-warn-tint:${t.warnTint};
+  --pu-font-display:${t.fontDisplay};
+  --pu-font-ui:${t.fontUi};
+  --pu-font-mono:${t.fontMono};
+  --pu-radius:${t.radius}; --pu-radius-lg:${t.radiusLg};
+  --pu-shadow-sm:0 1px 2px rgba(15,21,18,.06);
+  --pu-ring:0 0 0 3px color-mix(in srgb,var(--pu-green-700) 25%,transparent);
+  /* Code blocks (docs pages): deliberately not brand-overridable and not
+     redefined under dark mode — a code panel that's always a dark
+     "terminal" surface reads clearly against either a light or dark page
+     background, and against any brand's palette. */
+  --pu-code-bg:#0F1512; --pu-code-fg:#E7F2EA; --pu-code-line:#2E3B34;
+
+  --pu-surface-canvas:var(--pu-paper);
+  --pu-surface-raised:var(--pu-paper);
+  --pu-surface-sunken:var(--pu-paper-dim);
+  --pu-surface-overlay:rgba(15,21,18,.45);
+
+  --pu-text-primary:var(--pu-ink-950);
+  --pu-text-secondary:var(--pu-ink-500);
+  --pu-text-muted:rgba(92,102,96,.72);
+  --pu-text-on-accent:#FFFFFF;
+  --pu-text-disabled:rgba(92,102,96,.45);
+
+  --pu-border-subtle:var(--pu-line);
+  --pu-border-strong:var(--pu-ink-500);
+  --pu-border-focus:var(--pu-green-700);
+
+  --pu-status-success:var(--pu-green-700);
+  --pu-status-success-bg:var(--pu-green-tint);
+  --pu-status-danger:var(--pu-danger-text);
+  --pu-status-danger-bg:var(--pu-danger-tint);
+  --pu-status-warning:var(--pu-warn-text);
+  --pu-status-warning-bg:var(--pu-warn-tint);
+  --pu-status-info:var(--pu-text-secondary);
+  --pu-status-info-bg:var(--pu-surface-sunken);
+
+  /* Field: a text input's resting border, and the surface of the read-only
+     .pu-url box. In light mode both are the ordinary line and sunken
+     surface; the dark override (DEFAULT_DARK_BLOCK/darkBlockCss) lifts the
+     input's border and drops the URL box below the canvas, so an editable
+     field and a read-only box are told apart by more than the Copy button. */
+  --pu-field-border:var(--pu-line);
+  --pu-url-bg:var(--pu-surface-sunken);
+
+  --pu-slot-available-bg:var(--pu-surface-raised);
+  --pu-slot-available-border:var(--pu-border-subtle);
+  --pu-slot-available-text:var(--pu-text-primary);
+  --pu-slot-hover-bg:var(--pu-green-tint);
+  --pu-slot-hover-border:var(--pu-green-700);
+  --pu-slot-hover-text:var(--pu-text-primary);
+  --pu-slot-selected-bg:var(--pu-green-tint);
+  --pu-slot-selected-border:var(--pu-green-700);
+  --pu-slot-selected-text:var(--pu-text-primary);
+  --pu-slot-held-bg:var(--pu-warn-tint);
+  --pu-slot-held-border:var(--pu-warn);
+  --pu-slot-held-text:var(--pu-warn-text);
+  --pu-slot-booked-bg:var(--pu-surface-sunken);
+  --pu-slot-booked-border:var(--pu-border-subtle);
+  --pu-slot-booked-text:var(--pu-text-disabled);
+  --pu-slot-past-bg:var(--pu-surface-canvas);
+  --pu-slot-past-border:transparent;
+  --pu-slot-past-text:var(--pu-text-muted);
+  --pu-slot-outside-notice-bg:var(--pu-surface-raised);
+  --pu-slot-outside-notice-border:var(--pu-border-subtle);
+  --pu-slot-outside-notice-text:var(--pu-text-muted);
+}
+${theme?.darkBlockCss ?? DEFAULT_DARK_BLOCK}`
+}
+
+/** Punctual's own default palette, rendered — kept for tests and any caller that wants the unbranded tokens directly. */
+export const TOKENS = tokensCss()
 
 /**
  * Design notes (kept here, not as comments inside the template literal below,
@@ -829,9 +798,18 @@ form:has(#locationType option[value="google_meet"]:checked) .pu-loc-wrap{display
 .pu-day-heading:first-of-type{margin-top:.75rem}
 `
 
-export function pageCss(): string {
-  return FONT_FACES + TOKENS + BASE_CSS
+export function pageCss(theme?: BrandTheme): string {
+  return (theme?.fontFaces ?? FONT_FACES) + tokensCss(theme) + BASE_CSS
 }
+
+/** Which font files to `<link rel=preload>` for a given theme — see `BrandTheme.fontPreloads`. */
+export const DEFAULT_FONT_PRELOADS = [
+  '/fonts/inter-variable.woff2',
+  '/fonts/schibstedgrotesk-600.woff2',
+  '/fonts/ibmplexmono-400.woff2',
+  '/fonts/ibmplexmono-600.woff2',
+  '/fonts/ibmplexmono-700.woff2',
+]
 
 /**
  * Landing and docs-index page only. Kept separate from BASE_CSS so the

@@ -701,14 +701,15 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
           .prepare(
             `INSERT INTO bookings
              (id,event_type_id,host_user_id,host_user_ids_json,guest_name,guest_email,guest_timezone,
-              start_utc,end_utc,local_date,status,answers_json,external_event_ids_json,reschedule_of,
+              start_utc,end_utc,local_date,brand_host,status,answers_json,external_event_ids_json,reschedule_of,
               rescheduled_to,manage_token_hash,cancelled_at,created_at)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           )
           .bind(
             booking.id, booking.eventTypeId, booking.hostUserId,
             JSON.stringify(booking.hostUserIds), booking.guestName, booking.guestEmail,
-            booking.guestTimezone, booking.startUtc, booking.endUtc, booking.localDate, booking.status,
+            booking.guestTimezone, booking.startUtc, booking.endUtc, booking.localDate,
+            booking.brandHost ?? null, booking.status,
             JSON.stringify(booking.answers), JSON.stringify(booking.externalEventIds),
             booking.rescheduleOf, booking.rescheduledTo, booking.manageTokenHash,
             booking.cancelledAt, booking.createdAt,
@@ -1689,6 +1690,7 @@ function mapBooking(row: Record<string, unknown> | null): Booking | null {
     startUtc: Number(row['start_utc']),
     endUtc: Number(row['end_utc']),
     localDate: String(row['local_date'] ?? ''),
+    brandHost: row['brand_host'] == null ? null : String(row['brand_host']),
     status: String(row['status']) as Booking['status'],
     answers: JSON.parse(String(row['answers_json'] ?? '{}')),
     externalEventIds: JSON.parse(String(row['external_event_ids_json'] ?? '{}')),
