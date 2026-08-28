@@ -13,6 +13,10 @@
 import { sanitizeHeader } from '../../core/email-templates.js'
 import type { EmailMessage, EmailSender } from '../../ports.js'
 
+// ---------------------------------------------------------------------------
+// Resend
+// ---------------------------------------------------------------------------
+
 export interface ResendOptions {
   apiKey: string
   from: string

@@ -11,13 +11,18 @@ import { clampMonth } from '../../src/http/router.js'
  * committed, calendars synced, `/health` said `ok: true`. This suite's env
  * sets no RESEND/BREVO key, so it resolves to the console sender — the exact
  * degraded state, which makes this the natural place to assert the signal.
+ *
+ * `EMAIL` is overridden to `undefined` here specifically: the shared test
+ * env DOES declare the `send_email` binding (wrangler.toml, read by
+ * vitest.config.ts), same as any deployment that adds it — this test wants
+ * the OTHER scenario, a self-hoster who configured no provider at all.
  */
 describe('/health surfaces silent degradation', () => {
   it('reports the resolved email mode and warns when nothing is being delivered', async () => {
     const { default: worker } = await import('../../src/index.js')
     const res = await worker.fetch(
       new Request('https://punctual.sh/health'),
-      env,
+      { ...env, EMAIL: undefined },
       createExecutionContext(),
     )
     expect(res.status).toBe(200)

@@ -138,10 +138,10 @@ export function buildPorts(env: Env, request?: Request): EnginePorts {
 
   // A self-hoster with no email provider still gets a working product; the
   // emails land in `wrangler tail` rather than nowhere.
-  // Whichever provider is configured. Neither is required: with no key the
-  // sender logs, so a self-hoster has a working product on day one and can
-  // add deliverability later (ADR-0003 — the port exists so this is a choice,
-  // not a gate).
+  // Whichever provider is configured. None is required: with no key AND no
+  // EMAIL binding the sender logs, so a self-hoster has a working product on
+  // day one and can add deliverability later (ADR-0003 — the port exists so
+  // this is a choice, not a gate).
   const emailFrom = brand.fromEmail
   const emailFromName = brand.fromName
   // Resolved ONCE, next to the sender it describes, so the two cannot drift:

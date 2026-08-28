@@ -152,10 +152,12 @@ DNS, and sending to guests needs a Workers Paid plan.
 
 Do these in order:
 
-1. **Onboard the sending domain.** Cloudflare dashboard → **Compute → Email
-   Service → Email Sending → Onboard Domain**. Cloudflare adds MX, SPF and
-   DKIM records under `cf-bounce.<your-domain>`, plus DMARC at
-   `_dmarc.<your-domain>`; allow 5–15 minutes.
+1. **Onboard the sending domain.** Either run
+   `npx wrangler email sending enable your-domain.example`, or use the
+   Cloudflare dashboard → **Compute → Email Service → Email Sending → Onboard
+   Domain**. Cloudflare adds MX, SPF and DKIM records under
+   `cf-bounce.<your-domain>`, plus DMARC at `_dmarc.<your-domain>`; allow
+   5–15 minutes.
 
    It does not touch your apex MX, so an existing mailbox provider on the same
    domain (Google Workspace, Microsoft 365) keeps working — different DKIM
@@ -199,10 +201,10 @@ npx wrangler secret put RESEND_API_KEY
 npx wrangler secret put BREVO_API_KEY
 ```
 
-Then set `FROM_EMAIL` and `FROM_NAME` in `wrangler.toml` `[vars]` to an address
-on a domain you have verified with your provider. Configure SPF, DKIM and
-DMARC on that domain — booking confirmations that land in spam are worse than
-no email at all.
+Whichever path, set `FROM_EMAIL` and `FROM_NAME` in `wrangler.toml` `[vars]`
+to an address on a domain you have verified with your provider (or onboarded
+to Email Sending). Configure SPF, DKIM and DMARC on that domain — booking
+confirmations that land in spam are worse than no email at all.
 
 ## 7. Make it yours
 
@@ -298,7 +300,7 @@ Two features need a paid plan, and both degrade gracefully:
 | `SIGNING_KEY` | secret | HMAC key for guest manage links |
 | `GOOGLE_CLIENT_ID` / `_SECRET` | secret | Your Google OAuth app |
 | `MICROSOFT_CLIENT_ID` / `_SECRET` | secret | Your Microsoft app |
-| `[[send_email]]` | binding | Cloudflare Email Service — no key. Used when neither API key is set. Needs the sending domain onboarded (Compute → Email Service) and Workers Paid; until then guest sends fail while `/health` still reads healthy |
+| `[[send_email]]` | binding | Cloudflare Email Service — no key. Used when neither API key is set. Needs the sending domain onboarded (`wrangler email sending enable your-domain.example`, or Compute → Email Service in the dashboard) and Workers Paid; until then guest sends fail while `/health` still reads healthy |
 | `EMAIL_PROVIDER` | `[vars]` | Optional: `cloudflare`, `resend`, `brevo` or `console`. Names the sender instead of inferring it; a named provider whose key or binding is missing is reported on `/health` (`email_provider_unavailable`) and the dashboard instead of quietly falling back |
 | `RESEND_API_KEY` | secret | Omit to log emails instead of sending — `/health` and the dashboard both warn when neither key is set |
 | `BREVO_API_KEY` | secret | Alternative to Resend; Resend wins if both are set |
@@ -323,10 +325,11 @@ not being logged — they are being rejected. Two usual causes: the sending
 domain is not onboarded yet, or `FROM_EMAIL` is on a different domain than the
 one you onboarded. `npx wrangler tail` names which.
 
-**Emails are not arriving.** With no `RESEND_API_KEY` or `BREVO_API_KEY` they
-are logged, not sent — bookings still commit and calendars still sync, so
-nothing else looks wrong. Two places say so without your having to read logs:
-the dashboard shows a standing banner on every page, and `/health` reports it:
+**Emails are not arriving.** With no `EMAIL` binding, `RESEND_API_KEY` or
+`BREVO_API_KEY` they are logged, not sent — bookings still commit and
+calendars still sync, so nothing else looks wrong. Two places say so without
+your having to read logs: the dashboard shows a standing banner on every
+page, and `/health` reports it:
 
 ```bash
 curl -s https://your-deployment/health
@@ -334,9 +337,10 @@ curl -s https://your-deployment/health
 #  "warnings":["email_not_configured: ..."]}
 ```
 
-`emailDelivery` is `resend`, `brevo` or `console`. `console` means nothing is
-being delivered to anyone. `ok` stays `true` because the service itself is
-up — point monitoring at `warnings` being non-empty, not at `ok`.
+`emailDelivery` is `cloudflare`, `resend`, `brevo` or `console`. `console`
+means nothing is being delivered to anyone. `ok` stays `true` because the
+service itself is up — point monitoring at `warnings` being non-empty, not
+at `ok`.
 
 **Microsoft guests get two invitations.** Expected, and not something this
 deployment can turn off. Outlook sends its own meeting request whenever an
