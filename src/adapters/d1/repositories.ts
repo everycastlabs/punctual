@@ -243,8 +243,11 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
            COALESCE(u.company_url, ru.company_url) AS u_company_url,
            COALESCE(u.created_at, ru.created_at) AS u_created_at,
            t.id AS t_id, t.name AS t_name, t.slug AS t_slug, t.logo_key AS t_logo_key, t.show_name AS t_show_name, t.created_at AS t_created_at,
-           NULLIF((SELECT value FROM instance_settings WHERE key = 'company_logo_key'), '') AS company_logo_key,
-           (SELECT value FROM instance_settings WHERE key = 'company_logo_shape') AS company_logo_shape,
+           -- Global only (domain = ''), deliberately not per-domain yet:
+           -- the operator's company logo is a single deployment-wide value,
+           -- unlike the per-domain homepage identity above.
+           NULLIF((SELECT value FROM instance_settings WHERE domain = '' AND key = 'company_logo_key'), '') AS company_logo_key,
+           (SELECT value FROM instance_settings WHERE domain = '' AND key = 'company_logo_shape') AS company_logo_shape,
            et.*
          FROM event_types et
          LEFT JOIN users u ON u.id = et.owner_user_id
@@ -1513,26 +1516,26 @@ export function createD1Repositories(db: D1Database, scope: RequestScope): Repos
   }
 
   const settings: SettingsRepository = {
-    async get(key) {
+    async get(domain, key) {
       const row = await first<{ value: string }>(
-        'SELECT value FROM instance_settings WHERE key = ?',
-        key,
+        'SELECT value FROM instance_settings WHERE domain = ? AND key = ?',
+        domain, key,
       )
       return row?.value ?? null
     },
-    async getMany(keys) {
+    async getMany(domain, keys) {
       if (keys.length === 0) return {}
       const rows = await all<{ key: string; value: string }>(
-        `SELECT key, value FROM instance_settings WHERE key IN (${keys.map(() => '?').join(',')})`,
-        ...keys,
+        `SELECT key, value FROM instance_settings WHERE domain = ? AND key IN (${keys.map(() => '?').join(',')})`,
+        domain, ...keys,
       )
       return Object.fromEntries(rows.map((r) => [r.key, r.value]))
     },
-    async set(key, value, now) {
+    async set(domain, key, value, now) {
       await run(
-        `INSERT INTO instance_settings (key,value,updated_at) VALUES (?,?,?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-        key, value, now,
+        `INSERT INTO instance_settings (domain,key,value,updated_at) VALUES (?,?,?,?)
+         ON CONFLICT(domain,key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        domain, key, value, now,
       )
     },
   }

@@ -390,12 +390,22 @@ export const rrAssignments = sqliteTable(
   (t) => [primaryKey({ columns: [t.teamId, t.userId] })],
 )
 
-/** Operator-editable instance config (e.g. the sign-up policy) set from the dashboard's Admin page. */
-export const instanceSettings = sqliteTable('instance_settings', {
-  key: text('key').primaryKey(),
-  value: text('value').notNull(),
-  updatedAt: integer('updated_at').notNull(),
-})
+/**
+ * Operator-editable instance config, scoped per domain (`domain: ''` is the
+ * default/global scope — see `SettingsRepository`'s doc comment in ports.ts).
+ * Covers both instance-wide settings (e.g. the sign-up policy, always global)
+ * and per-domain homepage identity/content on a multi-brand deployment.
+ */
+export const instanceSettings = sqliteTable(
+  'instance_settings',
+  {
+    domain: text('domain').notNull().default(''),
+    key: text('key').notNull(),
+    value: text('value').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.domain, t.key] })],
+)
 
 /**
  * The real constraint behind the shared slug namespace (ADR — see

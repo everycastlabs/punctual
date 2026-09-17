@@ -107,16 +107,23 @@ export interface UserRepository {
 
 /**
  * Operator-editable instance settings, admin-managed from the dashboard.
- * A plain key-value table — currently only `signups` (the signup policy in
- * `SIGNUPS` env syntax). An env var with the same meaning always WINS over
- * the stored setting, so an operator who pins configuration in wrangler.toml
- * or a secret is never silently overridden from the UI.
+ * A key-value table scoped by `domain` — one shared Worker can answer several
+ * branded `Host` headers (see `adapters/brands.ts`), each with its own
+ * homepage identity/content, so the same key (e.g. `home_title`) can hold a
+ * different value per domain. `domain: ''` is the default/global scope: a
+ * single-brand self-hosted deployment (no recognized `Host`) always reads
+ * and writes there, and it is also where a setting with no per-domain
+ * meaning — `signups`, the instance-wide sign-up policy — always lives,
+ * regardless of which domain the admin happened to submit the form from.
+ * An env var with the same meaning always WINS over the stored setting, so
+ * an operator who pins configuration in wrangler.toml or a secret is never
+ * silently overridden from the UI.
  */
 export interface SettingsRepository {
-  get(key: string): Promise<string | null>
+  get(domain: string, key: string): Promise<string | null>
   /** The rows for these keys, in one round trip; absent keys are absent. */
-  getMany(keys: readonly string[]): Promise<Record<string, string>>
-  set(key: string, value: string, now: number): Promise<void>
+  getMany(domain: string, keys: readonly string[]): Promise<Record<string, string>>
+  set(domain: string, key: string, value: string, now: number): Promise<void>
 }
 
 export interface EventTypeRepository {

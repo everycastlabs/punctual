@@ -86,9 +86,20 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
   // the /privacy and /terms mounts below.
   app.get('/', async (c) => {
     // The instance decides what its front page is (core/domain/home.ts):
-    // the Punctual landing, or an index of its own booking links.
+    // the Punctual landing, or an index of its own booking links. Scoped by
+    // domain — a shared Worker answering several branded Host headers
+    // (adapters/brands.ts) has a separate homepage identity per domain, not
+    // one global row set; `ports.config.brandHost` is unset for an
+    // unrecognized Host, which is exactly `resolveBrand`'s own '' fallback.
     const repos = ports.repositories({ consistency: 'unconstrained' })
-    const values = await repos.settings.getMany([...HOME_KEYS, COMPANY_LOGO_KEY, COMPANY_LOGO_SHAPE])
+    const domain = ports.config.brandHost ?? ''
+    // The company logo stays a single deployment-wide value (domain ''),
+    // deliberately not per-domain yet — see repositories.ts's
+    // `bookingPageContext`, which reads the same two keys the same way.
+    const [values, logo] = await Promise.all([
+      repos.settings.getMany(domain, HOME_KEYS),
+      repos.settings.getMany('', [COMPANY_LOGO_KEY, COMPANY_LOGO_SHAPE]),
+    ])
     const home = parseHomeSettings(values)
     if (home.mode === 'index') {
       const items = await withTeamPeople(repos, homeItems(home, await repos.eventTypes.listActiveWithOwners()))
@@ -101,7 +112,7 @@ export function buildRouter(ports: EnginePorts, slots: SlotService): Hono<{ Bind
           intro: home.intro,
           website: home.website,
           contactEmail: home.contactEmail,
-          companyLogo: companyLogoFrom(values[COMPANY_LOGO_KEY], values[COMPANY_LOGO_SHAPE]),
+          companyLogo: companyLogoFrom(logo[COMPANY_LOGO_KEY], logo[COMPANY_LOGO_SHAPE]),
           featured,
           groups: homeGroups(items, featured),
           ...(ports.config.legalOperator ? { operator: ports.config.legalOperator } : {}),

@@ -236,3 +236,33 @@ describe('the instance homepage', () => {
     expect(await (await app.fetch(new Request(`${BASE}/`))).text()).toContain('Calendly')
   })
 })
+
+/**
+ * `instance_settings` is keyed by (domain, key), not just key — a single
+ * shared Worker answering several branded `Host` headers (adapters/brands.ts)
+ * needs its own homepage identity per domain, and the two must not leak into
+ * each other or into the default/global scope (`domain: ''`).
+ */
+describe('instance settings are scoped per domain', () => {
+  it('a value set for one domain is invisible to another, and to the default scope', async () => {
+    // A key no other test in this file writes to — the point is isolation
+    // between arbitrary domains sharing one table, not HOME_* semantics.
+    const KEY = '__domain_isolation_probe__'
+    const repos = createD1Repositories(db, { consistency: 'unconstrained' })
+    const now = Date.now()
+    await repos.settings.set('cal.scoutsuite.app', KEY, 'Scout Suite', now)
+    await repos.settings.set('cal.vcon.store', KEY, 'vCon Store', now)
+
+    expect(await repos.settings.get('cal.scoutsuite.app', KEY)).toBe('Scout Suite')
+    expect(await repos.settings.get('cal.vcon.store', KEY)).toBe('vCon Store')
+    expect(await repos.settings.get('', KEY)).toBeNull()
+
+    expect(await repos.settings.getMany('cal.scoutsuite.app', [KEY])).toEqual({ [KEY]: 'Scout Suite' })
+    expect(await repos.settings.getMany('cal.vcon.store', [KEY])).toEqual({ [KEY]: 'vCon Store' })
+    expect(await repos.settings.getMany('', [KEY])).toEqual({})
+
+    // Overwriting one domain's value never touches the other's.
+    await repos.settings.set('cal.scoutsuite.app', KEY, 'Scout Suite Updated', now + 1)
+    expect(await repos.settings.get('cal.vcon.store', KEY)).toBe('vCon Store')
+  })
+})

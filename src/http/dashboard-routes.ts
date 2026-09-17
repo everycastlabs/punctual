@@ -225,7 +225,10 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
    */
   async function effectiveSignupPolicy(repos: Repositories): Promise<SignupPolicy> {
     if (ports.config.signupPolicy) return ports.config.signupPolicy
-    const stored = await repos.settings.get('signups')
+    // Instance-wide, not per-domain: every domain on a shared deployment
+    // shares the same user table, so "who can sign up" is one policy, not
+    // one per brand.
+    const stored = await repos.settings.get('', 'signups')
     return parseSignupPolicy(stored ?? undefined)
   }
 
@@ -2327,10 +2330,15 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
     status = 200,
   ): Promise<Response> {
     const repos = c.get('repos')
+    // The domain the admin is currently browsing on — a shared user can be
+    // admin on more than one branded domain, and each domain's homepage
+    // identity is edited and stored independently (signups and the company
+    // logo stay instance-wide; see effectiveSignupPolicy/companyLogo).
+    const domain = ports.config.brandHost ?? ''
     const pinnedByEnv = ports.config.signupPolicy !== undefined
     const value = pinnedByEnv
       ? policyToValue(ports.config.signupPolicy!)
-      : ((await repos.settings.get('signups')) ?? 'open')
+      : ((await repos.settings.get('', 'signups')) ?? 'open')
     return c.html(
       adminPage({
         brandName,
@@ -2341,7 +2349,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
         allUsers: await repos.users.listAll(),
         signups: { value, pinnedByEnv },
         companyLogo: await companyLogo(repos),
-        home: parseHomeSettings(await repos.settings.getMany(HOME_KEYS)),
+        home: parseHomeSettings(await repos.settings.getMany(domain, HOME_KEYS)),
         homeChoices: (await repos.eventTypes.listActiveWithOwners()).map((item) => ({
           id: item.eventType.id,
           title: item.eventType.title,
@@ -2354,8 +2362,9 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
     )
   }
 
+  /** One per instance, not per domain — see the doc comment on the /logo route below. */
   async function companyLogo(repos: Repositories): Promise<CompanyLogo | null> {
-    const [key, shape] = await Promise.all([repos.settings.get(COMPANY_LOGO_KEY), repos.settings.get(COMPANY_LOGO_SHAPE)])
+    const [key, shape] = await Promise.all([repos.settings.get('', COMPANY_LOGO_KEY), repos.settings.get('', COMPANY_LOGO_SHAPE)])
     return companyLogoFrom(key, shape)
   }
 
@@ -2372,7 +2381,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
     if (!(await csrfOk(c, form))) return csrfRejected(c)
     const stored = await storeUploadedImage(form.get('logo'))
     if (!stored.ok) return renderAdmin(c, { errors: { 'company-logo': stored.message } }, 400)
-    await c.get('repos').settings.set(COMPANY_LOGO_KEY, stored.key, ports.clock.now())
+    await c.get('repos').settings.set('', COMPANY_LOGO_KEY, stored.key, ports.clock.now())
     await advanceBookmark(c)
     return renderAdmin(c, { notice: 'Company logo updated.' })
   })
@@ -2389,7 +2398,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
     if (shape === 'natural' && !(await ensureFitThumb(current.key))) {
       return fail('The original of this logo is gone — upload it again to show it in its own proportions.')
     }
-    await repos.settings.set(COMPANY_LOGO_SHAPE, shape, ports.clock.now())
+    await repos.settings.set('', COMPANY_LOGO_SHAPE, shape, ports.clock.now())
     await advanceBookmark(c)
     return renderAdmin(c, { notice: shape === 'natural' ? 'Company logo shown in its own proportions.' : 'Company logo shown as a circle.' })
   })
@@ -2421,14 +2430,17 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
     const picked = [...new Set(form.getAll('event_types').map(String))].filter((id) => active.has(id))
     const featured = String(form.get('home_featured') ?? '')
     const now = ports.clock.now()
-    await repos.settings.set(HOME_MODE, mode, now)
-    await repos.settings.set(HOME_TITLE, title, now)
-    await repos.settings.set(HOME_INTRO, intro, now)
-    await repos.settings.set(HOME_WEBSITE, website, now)
-    await repos.settings.set(HOME_CONTACT, contact, now)
-    await repos.settings.set(HOME_EVENT_TYPES, JSON.stringify(picked), now)
+    // The domain this admin form was submitted on — see renderAdmin's own
+    // doc comment on why this isn't instance-wide.
+    const domain = ports.config.brandHost ?? ''
+    await repos.settings.set(domain, HOME_MODE, mode, now)
+    await repos.settings.set(domain, HOME_TITLE, title, now)
+    await repos.settings.set(domain, HOME_INTRO, intro, now)
+    await repos.settings.set(domain, HOME_WEBSITE, website, now)
+    await repos.settings.set(domain, HOME_CONTACT, contact, now)
+    await repos.settings.set(domain, HOME_EVENT_TYPES, JSON.stringify(picked), now)
     // Only a picked link can be featured; anything else means none.
-    await repos.settings.set(HOME_FEATURED, picked.includes(featured) ? featured : '', now)
+    await repos.settings.set(domain, HOME_FEATURED, picked.includes(featured) ? featured : '', now)
     await advanceBookmark(c)
     return renderAdmin(c, { notice: mode === 'index' ? 'Homepage saved — / now shows this instance.' : 'Homepage saved — / shows the landing.' })
   })
@@ -2436,7 +2448,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
   app.post('/dashboard/admin/logo/delete', requireSession, requireAdmin, async (c) => {
     const form = await c.req.formData()
     if (!(await csrfOk(c, form))) return csrfRejected(c)
-    await c.get('repos').settings.set(COMPANY_LOGO_KEY, '', ports.clock.now())
+    await c.get('repos').settings.set('', COMPANY_LOGO_KEY, '', ports.clock.now())
     await advanceBookmark(c)
     return renderAdmin(c, { notice: 'Company logo removed.' })
   })
@@ -2463,7 +2475,7 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
       value = parsed.entries.join(', ')
     } else return renderAdmin(c, { errors: { allowlist: 'Choose a sign-up mode' } }, 400)
 
-    await c.get('repos').settings.set('signups', value, ports.clock.now())
+    await c.get('repos').settings.set('', 'signups', value, ports.clock.now())
     await advanceBookmark(c)
     return renderAdmin(c, { notice: 'Sign-up policy saved.' })
   })

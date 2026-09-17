@@ -473,16 +473,23 @@ export function fakeConfig(overrides: Partial<EngineConfig> = {}): EngineConfig 
 }
 
 export function createFakeSettings(): SettingsRepository {
+  // Keyed by `${domain} ${key}` — a real composite key, not string
+  // concatenation with an ambiguous separator, so a domain or key containing
+  // the delimiter itself (neither ever does in practice, but the primitive
+  // shouldn't rely on that) can't collide with another row.
   const store = new Map<string, string>()
+  const composite = (domain: string, key: string) => `${domain} ${key}`
   return {
-    async get(key) {
-      return store.get(key) ?? null
+    async get(domain, key) {
+      return store.get(composite(domain, key)) ?? null
     },
-    async getMany(keys) {
-      return Object.fromEntries(keys.filter((k) => store.has(k)).map((k) => [k, store.get(k)!]))
+    async getMany(domain, keys) {
+      return Object.fromEntries(
+        keys.filter((k) => store.has(composite(domain, k))).map((k) => [k, store.get(composite(domain, k))!]),
+      )
     },
-    async set(key, value) {
-      store.set(key, value)
+    async set(domain, key, value) {
+      store.set(composite(domain, key), value)
     },
   }
 }
