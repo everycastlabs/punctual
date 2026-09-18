@@ -55,6 +55,15 @@ export interface BookingRequest {
   brandHost?: string | null
   /** Round-robin ordering input: teamId + last-assigned times. */
   rrContext?: { teamId: string; members: TeamMember[]; lastAssignedAt: Map<string, number> }
+  /**
+   * A host manually creating this booking has already decided the time AND
+   * exactly who it's for — every event-type availability rule (schedule
+   * windows, notice, horizon, daily cap) is skipped, and round-robin's own
+   * auto-pick never runs. `hosts` is taken as the definitive participant
+   * list, not a candidate pool to narrow. The one thing that still always
+   * applies: a real conflict with an existing confirmed booking.
+   */
+  overrideAvailability?: boolean
 }
 
 export type BookingFailure =
@@ -142,9 +151,26 @@ export function prepareBooking(req: BookingRequest): BookingResult {
   if (!et.active) return { ok: false, reason: 'policy', detail: 'event type inactive' }
   if (req.hosts.length === 0) return { ok: false, reason: 'no_eligible_host' }
 
-  // Which hosts must be free depends on the scheduling type.
+  // Which hosts must be free depends on the scheduling type — UNLESS the
+  // caller is overriding: then `req.hosts` already IS the participant list
+  // (no required/optional split, no round-robin pick), and every one of them
+  // just needs to be free of a real conflict.
   let participating: HostAvailabilityInput[]
-  if (et.schedulingType === 'collective') {
+  if (req.overrideAvailability) {
+    if (req.expectedHostCount != null && req.hosts.length < req.expectedHostCount) {
+      return {
+        ok: false,
+        reason: 'no_eligible_host',
+        detail: 'one or more chosen hosts have no availability configured',
+      }
+    }
+    for (const h of req.hosts) {
+      if (!isSlotStillValid(h, et, req.start, now, { overrideAvailability: true })) {
+        return { ok: false, reason: 'slot_taken', detail: h.hostUserId }
+      }
+    }
+    participating = req.hosts
+  } else if (et.schedulingType === 'collective') {
     // Every REQUIRED host — and if any one fails, the whole booking fails.
     // That includes required hosts that failed to resolve at all, which
     // would otherwise vanish from the set and be silently excluded from

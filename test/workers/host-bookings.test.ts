@@ -9,6 +9,13 @@
  * `changeBookingHosts`: its placeholder refuses everything as `not_found`,
  * and that sentence on the page is the proof the route called it (the
  * mapping of every other reason is a pure function, tested in test/core).
+ *
+ * The "manual booking" describe block only proves the ROUTE builds and
+ * forwards the right request (parsed date/time, guest info, host selection,
+ * `overrideAvailability: true`) and handles auth/validation/rendering
+ * correctly — this file's stubbed coordinator always succeeds, so it cannot
+ * prove availability is actually bypassed or a real conflict still refused.
+ * That's `prepareBooking`'s job, pure, in test/core/booking-override.test.ts.
  */
 
 import { env } from 'cloudflare:test'
@@ -31,6 +38,7 @@ import {
 } from '../../src/testing/fakes.js'
 import type { SlotService } from '../../src/engine.js'
 import type { Booking } from '../../src/core/domain/types.js'
+import { wallClockToInstant } from '../../src/core/time/zone.js'
 import type {
   BlobCache,
   BookingAttempt,
@@ -679,5 +687,89 @@ describe('co-hosts', () => {
     const csrf = await csrfFrom('/dashboard/bookings', stranger)
     const res = await post(`/dashboard/bookings/${B_TEAM}/hosts/add`, { csrf, userId: OUTSIDER_ID }, stranger)
     expect(res.status).toBe(404)
+  })
+})
+
+describe('manual booking (override availability)', () => {
+  it('shows a host picker only for a team event type', async () => {
+    const personal = await (await get(`/dashboard/event-types/${ET_PERSONAL}/book`, await seedSession(ALICE_ID))).text()
+    expect(personal).not.toContain('name="hostUserId"')
+    const team = await (await get(`/dashboard/event-types/${ET_TEAM}/book`, await seedSession(CAROL_ID))).text()
+    expect(team).toContain(`name="hostUserId" value="${ALICE_ID}" checked`)
+    expect(team).toContain(`name="hostUserId" value="${BOB_ID}" checked`)
+  })
+
+  it('creates a personal booking at the exact typed time, overriding availability', async () => {
+    const cookie = await seedSession(ALICE_ID)
+    const csrf = await csrfFrom(`/dashboard/event-types/${ET_PERSONAL}/book`, cookie)
+    const before = booked.length
+    const res = await post(
+      `/dashboard/event-types/${ET_PERSONAL}/book`,
+      { csrf, name: 'Grace Hopper', email: 'grace@example.test', when: '2026-08-01T03:15' },
+      cookie,
+    )
+    expect(booked).toHaveLength(before + 1)
+    const req = booked[before]!
+    expect(req.overrideAvailability).toBe(true)
+    expect(req.hostUserIds).toEqual([ALICE_ID])
+    expect(req.guestName).toBe('Grace Hopper')
+    expect(req.guestEmail).toBe('grace@example.test')
+    expect(req.start).toBe(wallClockToInstant({ year: 2026, month: 8, day: 1, hour: 3, minute: 15, second: 0 }, 'Europe/Kyiv'))
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toMatch(/^\/dashboard\/bookings\/.+\?created=1$/)
+  })
+
+  it('for a team event type, only the explicitly checked hosts participate', async () => {
+    const cookie = await seedSession(CAROL_ID)
+    const csrf = await csrfFrom(`/dashboard/event-types/${ET_TEAM}/book`, cookie)
+    const before = booked.length
+    await post(
+      `/dashboard/event-types/${ET_TEAM}/book`,
+      { csrf, name: 'Grace Hopper', email: 'grace@example.test', when: '2026-08-01T03:15', hostUserId: BOB_ID },
+      cookie,
+    )
+    expect(booked).toHaveLength(before + 1)
+    expect(booked[before]!.hostUserIds).toEqual([BOB_ID])
+  })
+
+  it('drops a checked host who is not actually eligible for this event type', async () => {
+    const cookie = await seedSession(CAROL_ID)
+    const csrf = await csrfFrom(`/dashboard/event-types/${ET_TEAM}/book`, cookie)
+    const before = booked.length
+    const res = await post(
+      `/dashboard/event-types/${ET_TEAM}/book`,
+      { csrf, name: 'Grace Hopper', email: 'grace@example.test', when: '2026-08-01T03:15', hostUserId: OUTSIDER_ID },
+      cookie,
+    )
+    expect(res.status).toBe(400)
+    expect(await res.text()).toContain('Choose at least one')
+    expect(booked).toHaveLength(before)
+  })
+
+  it('re-renders with field errors and creates nothing when the form is incomplete', async () => {
+    const cookie = await seedSession(ALICE_ID)
+    const csrf = await csrfFrom(`/dashboard/event-types/${ET_PERSONAL}/book`, cookie)
+    const before = booked.length
+    const res = await post(`/dashboard/event-types/${ET_PERSONAL}/book`, { csrf, name: '', email: 'not-an-email', when: '' }, cookie)
+    expect(res.status).toBe(400)
+    const html = await res.text()
+    expect(html).toContain('Not an email address')
+    expect(html).toContain('Pick a date and time')
+    expect(booked).toHaveLength(before)
+  })
+
+  it('is a 404 for a stranger or a non-admin team member, and a 403 without the CSRF token', async () => {
+    const stranger = await seedSession(OUTSIDER_ID)
+    expect((await get(`/dashboard/event-types/${ET_PERSONAL}/book`, stranger)).status).toBe(404)
+    // Bob hosts the team event type but is not a team admin — editing it,
+    // including creating a booking against it, is an admin action.
+    const bob = await seedSession(BOB_ID)
+    expect((await get(`/dashboard/event-types/${ET_TEAM}/book`, bob)).status).toBe(404)
+
+    const alice = await seedSession(ALICE_ID)
+    const before = booked.length
+    const res = await post(`/dashboard/event-types/${ET_PERSONAL}/book`, { name: 'x', email: 'x@example.test', when: '2026-08-01T03:15' }, alice)
+    expect(res.status).toBe(403)
+    expect(booked).toHaveLength(before)
   })
 })

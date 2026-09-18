@@ -319,15 +319,23 @@ export function isSlotStillValid(
   et: EventType,
   start: number,
   now: number,
+  opts?: { overrideAvailability?: boolean },
 ): boolean {
+  const end = start + et.durationMinutes * MINUTE
+  const footprint = bookingFootprint(start, end, et)
+
+  // An admin/host manually creating a booking has already decided the time —
+  // every rule below exists to keep a GUEST from claiming a slot that was
+  // never on offer, none of which applies here. The one check that always
+  // stays is the last line: a real conflict with an existing confirmed
+  // booking (or hold, or external calendar busy time) is never optional.
+  if (opts?.overrideAvailability) return !overlapsAny(footprint, host.busy)
+
   // A start off the 5-minute grid was never offered, and would claim buckets
   // that straddle two legitimately-offered slots — blocking both. The client
   // supplies `start` directly, so this must be checked here rather than
   // trusted from the listing.
   if (start % BUCKET_MS !== 0) return false
-
-  const end = start + et.durationMinutes * MINUTE
-  const footprint = bookingFootprint(start, end, et)
 
   if (start < now + et.minNoticeMinutes * MINUTE) return false
   if (start > now + et.maxHorizonDays * DAY) return false

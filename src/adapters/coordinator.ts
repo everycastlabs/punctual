@@ -186,8 +186,12 @@ export function createCoordinator(deps: CoordinatorDeps): HostCoordinator {
           manageTokenHash,
           rescheduleOf: request.rescheduleOf ?? null,
           rrContext,
-          expectedHostCount: requiredCount,
+          // An override caller explicitly picked this exact set of hosts —
+          // every one of them must resolve, not just the ones a team event
+          // type's own required/optional config would have counted.
+          expectedHostCount: request.overrideAvailability ? request.hostUserIds.length : requiredCount,
           brandHost: request.brandHost ?? null,
+          overrideAvailability: request.overrideAvailability,
         })
 
         if (!prepared.ok) {

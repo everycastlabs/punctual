@@ -820,6 +820,8 @@ export interface BookingAttempt {
   rescheduleOf?: string
   /** See `Booking.brandHost` — the caller's own `EngineConfig.brandHost`, so the reminders cron can re-resolve this exact brand later. */
   brandHost?: string | null
+  /** See `BookingRequest.overrideAvailability` (core/domain/booking-service.ts). */
+  overrideAvailability?: boolean
 }
 
 export type BookingOutcome =

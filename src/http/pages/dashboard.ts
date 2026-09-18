@@ -47,7 +47,7 @@ import type { BookingListView, CalendarProviderName, EmailDelivery } from '../..
 import type { HostChangeFailure } from '../../core/domain/booking-hosts.js'
 import { HOME_INTRO_MAX, HOME_TITLE_MAX, type HomeSettings } from '../../core/domain/home.js'
 import { slotStateClassName } from '../../core/slot-state.js'
-import { slugify } from '../../core/domain/booking-service.js'
+import { effectiveQuestions, slugify } from '../../core/domain/booking-service.js'
 import { formatInZone, localDateString, offsetLabel } from '../../core/time/zone.js'
 import type { ResolvedHost } from '../../core/domain/hosts.js'
 import { avatarHtml, escapeHtml, hostsSentence, joinNames, logoHtml, shellFoot, shellHead } from './booking.js'
@@ -909,6 +909,15 @@ ${
     </div>
   </form>
 </section>
+${
+  editing
+    ? `<section class="pu-card" aria-label="Create a booking manually" style="margin-top:1.5rem">
+  <h2>Create a booking manually</h2>
+  <p class="pu-muted">Any date and time, skipping this event type's own hours, notice window and booking limits &mdash; for a meeting booked outside the system. Still refuses a time already taken on the chosen host's calendar.</p>
+  <a class="pu-btn pu-btn-ghost" href="/dashboard/event-types/${encodeURIComponent(et!.id)}/book">Create a booking</a>
+</section>`
+    : ''
+}
 ${
   editing
     ? `<form class="pu-card" method="post" style="margin-top:1.5rem"
@@ -2980,6 +2989,100 @@ export function hostReschedulePage(d: HostReschedulePageData): string {
     `<p class="pu-muted" style="margin:0 0 .5rem;font-size:.875rem"><a href="${path}">&larr; ${escapeHtml(title)} with ${escapeHtml(b.guestName)}</a></p>
 <h1>Reschedule</h1>
 ${body}` +
+    shellBottom(d.brandName)
+  )
+}
+
+export interface ManualBookingPageData extends DashboardChrome {
+  eventType: EventType
+  /** Every team member eligible to host this event type — empty for a personal one, which never shows a picker. */
+  teamHosts: User[]
+  error?: string
+  errors?: Record<string, string>
+  values?: Record<string, string>
+  /** Which `teamHosts` were checked on a rejected submission, so it isn't lost on re-render. */
+  selectedHostIds?: string[]
+}
+
+/**
+ * Create a booking directly, bypassing the event type's own availability —
+ * schedule windows, notice, horizon, daily cap — the one thing this can never
+ * skip is a real conflict with a host's existing confirmed booking
+ * (`overrideAvailability`, core/domain/booking-service.ts). For a team event
+ * type the signed-in host picks exactly who it's for; round-robin's own
+ * auto-assignment never runs here.
+ */
+export function manualBookingPage(d: ManualBookingPageData): string {
+  const et = d.eventType
+  const errors = d.errors ?? {}
+  const values = d.values ?? {}
+  const selected = new Set(d.selectedHostIds ?? d.teamHosts.map((u) => u.id))
+  const err = (field: string) => (errors[field] ? `<p class="pu-err" id="err-${field}">${escapeHtml(errors[field])}</p>` : '')
+  const desc = (field: string) => (errors[field] ? ` aria-describedby="err-${field}"` : '')
+
+  const hostPicker =
+    d.teamHosts.length > 0
+      ? `<fieldset>
+      <legend>Who this booking is for</legend>
+      <p class="pu-help">Picked explicitly — a manually-created booking is never round-robin assigned.</p>
+      ${d.teamHosts
+        .map(
+          (u) =>
+            `<label style="display:flex;align-items:center;gap:.5rem;font-weight:400;margin:.35rem 0">
+          <input type="checkbox" name="hostUserId" value="${escapeHtml(u.id)}"${selected.has(u.id) ? ' checked' : ''}>
+          ${escapeHtml(u.name || u.slug)}
+        </label>`,
+        )
+        .join('\n      ')}
+      ${err('hosts')}
+    </fieldset>`
+      : ''
+
+  const questions = effectiveQuestions(et)
+    .map((q) => {
+      const val = escapeHtml(values[q.id] ?? '')
+      const req = q.required ? ' required aria-required="true"' : ''
+      const field =
+        q.type === 'textarea'
+          ? `<textarea id="q-${escapeHtml(q.id)}" name="q_${escapeHtml(q.id)}"${req}${desc(q.id)}>${val}</textarea>`
+          : q.type === 'select'
+            ? `<select id="q-${escapeHtml(q.id)}" name="q_${escapeHtml(q.id)}"${req}${desc(q.id)}>
+                 <option value=""></option>
+                 ${(q.options ?? [])
+                   .map((o) => `<option value="${escapeHtml(o)}"${values[q.id] === o ? ' selected' : ''}>${escapeHtml(o)}</option>`)
+                   .join('')}
+               </select>`
+            : `<input id="q-${escapeHtml(q.id)}" name="q_${escapeHtml(q.id)}" value="${val}"${req}${desc(q.id)}>`
+      return `<label for="q-${escapeHtml(q.id)}">${escapeHtml(q.label)}${q.required ? '' : ' <span class="pu-muted">(optional)</span>'}</label>
+        ${field}
+        ${err(q.id)}`
+    })
+    .join('\n      ')
+
+  const path = `/dashboard/event-types/${encodeURIComponent(et.id)}`
+  return (
+    shellTop(d, `Create a booking · ${et.title}`, 'bookings') +
+    `<p class="pu-muted" style="margin:0 0 .5rem;font-size:.875rem"><a href="${path}">&larr; ${escapeHtml(et.title)}</a></p>
+<h1>Create a booking</h1>
+<p class="pu-muted">Any date and time — this skips ${escapeHtml(et.title)}'s own hours, notice window and booking limits. It still refuses a time already taken on the chosen host's calendar.</p>
+${d.error ? `<p class="pu-err" role="alert">${escapeHtml(d.error)}</p>` : ''}
+<section class="pu-card" aria-label="New booking">
+  <form method="post" action="${path}/book">
+    ${csrfField(d.csrf)}
+    <label for="name">Guest name</label>
+    <input id="name" name="name" value="${escapeHtml(values.name ?? '')}" required${desc('name')}>
+    ${err('name')}
+    <label for="email">Guest email</label>
+    <input id="email" name="email" type="email" value="${escapeHtml(values.email ?? '')}" required${desc('email')}>
+    ${err('email')}
+    <label for="when">Date and time <span class="pu-muted">(${escapeHtml(d.user.tz)})</span></label>
+    <input id="when" name="when" type="datetime-local" value="${escapeHtml(values.when ?? '')}" required${desc('when')}>
+    ${err('when')}
+    ${hostPicker}
+    ${questions}
+    <button class="pu-btn" type="submit" style="margin-top:1rem">Create booking</button>
+  </form>
+</section>` +
     shellBottom(d.brandName)
   )
 }

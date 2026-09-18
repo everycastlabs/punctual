@@ -76,7 +76,8 @@ import {
 } from '../core/domain/auth-flows.js'
 import { OAUTH_ENDPOINTS, needsSetup, scopesFor, type OAuthPurpose } from '../adapters/oauth.js'
 import { dayRange } from '../engine.js'
-import { isValidTimeZone, localDateString } from '../core/time/zone.js'
+import { isValidTimeZone, localDateString, wallClockToInstant } from '../core/time/zone.js'
+import { isValidEmail, pickDeclaredAnswers, validateAnswers } from '../core/domain/booking-service.js'
 import { validateSlug } from '../core/domain/slugs.js'
 import { canManageTeam, isManagingRole } from '../core/domain/teams.js'
 import { hostUsers, hostsForReschedule, resolveHosts as resolveEventTypeHosts } from '../core/domain/hosts.js'
@@ -110,6 +111,7 @@ import {
   eventTypeForm,
   loginPage,
   manageLinkErrorPage,
+  manualBookingPage,
   parseOverrides,
   parseQuestions,
   questionsParseError,
@@ -1041,6 +1043,136 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
       )
     }
     return c.redirect('/dashboard', 302)
+  })
+
+  app.get('/dashboard/event-types/:id/book', requireSession, async (c) => {
+    const eventType = await ownedEventType(c)
+    if (!eventType) return notFound(c)
+    const repos = c.get('repos')
+    const user = c.get('user')
+    const teamHosts = eventType.ownerTeamId ? hostUsers(await resolveEventTypeHosts(repos, eventType, user)) : []
+    return c.html(
+      manualBookingPage({
+        brandName,
+        user,
+        csrf: c.get('csrf'),
+        emailDelivery,
+        ...(emailProblem ? { emailProblem } : {}),
+        eventType,
+        teamHosts,
+      }),
+    )
+  })
+
+  /**
+   * Create a booking directly, skipping the guest-facing flow entirely —
+   * `overrideAvailability` (core/domain/booking-service.ts) bypasses the
+   * event type's own hours/notice/horizon/cap, but the coordinator still
+   * refuses a time already taken on the chosen host's calendar. Everything
+   * after a successful `coordinator.book` call — calendar sync, the guest
+   * and host confirmation email, webhooks — is the SAME pipeline a normal
+   * booking goes through; nothing here re-implements it.
+   */
+  app.post('/dashboard/event-types/:id/book', requireSession, async (c) => {
+    const form = await c.req.formData()
+    if (!(await csrfOk(c, form))) return csrfRejected(c)
+    const eventType = await ownedEventType(c)
+    if (!eventType) return notFound(c)
+    const repos = c.get('repos')
+    const user = c.get('user')
+    const teamHosts = eventType.ownerTeamId ? hostUsers(await resolveEventTypeHosts(repos, eventType, user)) : []
+
+    const name = String(form.get('name') ?? '').trim()
+    const email = String(form.get('email') ?? '').trim()
+    const when = String(form.get('when') ?? '')
+    const selectedHostIds = form.getAll('hostUserId').map(String)
+    const answers: Record<string, string> = {}
+    for (const [k, v] of form.entries()) {
+      if (k.startsWith('q_')) answers[k.slice(2)] = String(v)
+    }
+    const values = { name, email, when, ...answers }
+    const rerender = (errors: Record<string, string>, error?: string, status: 400 | 409 = 400) =>
+      c.html(
+        manualBookingPage({
+          brandName,
+          user,
+          csrf: c.get('csrf'),
+          emailDelivery,
+          ...(emailProblem ? { emailProblem } : {}),
+          eventType,
+          teamHosts,
+          selectedHostIds,
+          values,
+          errors,
+          ...(error ? { error } : {}),
+        }),
+        status,
+      )
+
+    const errors: Record<string, string> = {}
+    if (!name) errors.name = 'Required'
+    if (!email || !isValidEmail(email)) errors.email = 'Not an email address'
+
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(when)
+    let start = NaN
+    if (!match) {
+      errors.when = 'Pick a date and time'
+    } else {
+      start = wallClockToInstant(
+        {
+          year: Number(match[1]),
+          month: Number(match[2]),
+          day: Number(match[3]),
+          hour: Number(match[4]),
+          minute: Number(match[5]),
+          second: 0,
+        },
+        user.tz,
+      )
+    }
+
+    let hostUserIds: string[]
+    if (eventType.ownerTeamId) {
+      const eligible = new Set(teamHosts.map((u) => u.id))
+      hostUserIds = selectedHostIds.filter((id) => eligible.has(id))
+      if (hostUserIds.length === 0) errors.hosts = 'Choose at least one'
+    } else {
+      hostUserIds = [user.id]
+    }
+
+    const declared = pickDeclaredAnswers(eventType, answers)
+    Object.assign(errors, validateAnswers(eventType, declared))
+    if (Object.keys(errors).length > 0) return rerender(errors)
+
+    const outcome = await ports.coordinator.book(hostUserIds[0]!, {
+      eventTypeId: eventType.id,
+      hostUserIds,
+      start,
+      end: start + eventType.durationMinutes * 60_000,
+      guestName: name,
+      guestEmail: email,
+      guestTimezone: user.tz,
+      answers: declared,
+      brandHost: ports.config.brandHost,
+      overrideAvailability: true,
+    })
+
+    if (!outcome.ok) {
+      const who =
+        outcome.detail === user.id
+          ? 'You already have'
+          : `${teamHosts.find((u) => u.id === outcome.detail)?.name ?? 'That host'} already has`
+      const message =
+        outcome.reason === 'slot_taken'
+          ? `${who} a booking at this time.`
+          : outcome.reason === 'outside_availability'
+            ? 'One or more chosen hosts have no availability configured at all.'
+            : 'This event type is not active.'
+      return rerender({}, message, outcome.reason === 'slot_taken' ? 409 : 400)
+    }
+
+    await advanceBookmark(c)
+    return c.redirect(`/dashboard/bookings/${encodeURIComponent(outcome.booking.id)}?created=1`, 302)
   })
 
   /**
@@ -2689,7 +2821,9 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
           ? 'Participants updated.'
           : c.req.query('resent')
             ? 'Confirmation resent.'
-            : undefined
+            : c.req.query('created')
+              ? 'Booking created. The guest has been emailed.'
+              : undefined
     return c.html(hostBookingPage(await hostBookingPageData(c, access, notice ? { notice } : {})))
   })
 
