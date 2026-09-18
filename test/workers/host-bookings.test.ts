@@ -252,6 +252,11 @@ async function bookingRow(id: string): Promise<{ status: string; rescheduled_to:
     .first<{ status: string; rescheduled_to: string | null; reschedule_of: string | null }>()
 }
 
+async function manageTokenHash(id: string): Promise<string | null> {
+  const row = await db.prepare('SELECT manage_token_hash FROM bookings WHERE id = ?').bind(id).first<{ manage_token_hash: string }>()
+  return row?.manage_token_hash ?? null
+}
+
 function emailsTo(address: string): Array<{ subject: string; text: string }> {
   const out: Array<{ subject: string; text: string }> = []
   for (const m of sent) {
@@ -389,6 +394,7 @@ describe('booking page', () => {
     expect(html).toContain('Not on this one')
     expect(html).toContain(`href="/dashboard/bookings/${B_TEAM}/reschedule"`)
     expect(html).toContain(`action="/dashboard/bookings/${B_TEAM}/cancel"`)
+    expect(html).toContain(`action="/dashboard/bookings/${B_TEAM}/resend"`)
     expect(html).toContain('name="note"')
   })
 
@@ -406,9 +412,11 @@ describe('booking page', () => {
     const past = await (await get(`/dashboard/bookings/${B_PAST}`, cookie)).text()
     expect(past).toContain('already happened')
     expect(past).not.toContain(`action="/dashboard/bookings/${B_PAST}/cancel"`)
+    expect(past).not.toContain(`action="/dashboard/bookings/${B_PAST}/resend"`)
     const cancelled = await (await get(`/dashboard/bookings/${B_CANC}`, cookie)).text()
     expect(cancelled).toContain('nothing left to change')
     expect(cancelled).not.toContain(`/dashboard/bookings/${B_CANC}/reschedule`)
+    expect(cancelled).not.toContain(`/dashboard/bookings/${B_CANC}/resend`)
   })
 })
 
@@ -448,6 +456,62 @@ describe('cancel', () => {
     const alice = await seedSession(ALICE_ID)
     expect((await post(`/dashboard/bookings/${B_TEAM}/cancel`, { note: 'x' }, alice)).status).toBe(403)
     expect((await bookingRow(B_TEAM))?.status).toBe('confirmed')
+  })
+})
+
+describe('resend', () => {
+  it('re-mails the guest and the primary host, and rotates the manage token', async () => {
+    const before = await manageTokenHash(B_TEAM)
+    const cookie = await seedSession(ALICE_ID)
+    const csrf = await csrfFrom(`/dashboard/bookings/${B_TEAM}`, cookie)
+    const res = await post(`/dashboard/bookings/${B_TEAM}/resend`, { csrf }, cookie)
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toBe(`/dashboard/bookings/${B_TEAM}?resent=1`)
+
+    const [guestMail] = emailsTo('grace@example.test')
+    expect(guestMail?.subject).toContain('Confirmed: Support call')
+    // Same as a fresh booking's own confirmation: only the primary host is
+    // mailed, not every co-host — resend deliberately matches that, rather
+    // than inventing new multi-host semantics of its own.
+    const [aliceMail] = emailsTo('alice-hb@example.test')
+    expect(aliceMail?.subject).toContain('New booking: Support call')
+    expect(emailsTo('bob-hb@example.test')).toHaveLength(0)
+
+    // Same booking, same status — nothing about it changed except the link.
+    expect((await bookingRow(B_TEAM))?.status).toBe('confirmed')
+    expect(await manageTokenHash(B_TEAM)).not.toBe(before)
+
+    const page = await (await get(`/dashboard/bookings/${B_TEAM}?resent=1`, cookie)).text()
+    expect(page).toContain('Confirmation resent.')
+  })
+
+  it('does not re-fire the calendar sync or webhook side effects a real create has', async () => {
+    const cookie = await seedSession(ALICE_ID)
+    const csrf = await csrfFrom(`/dashboard/bookings/${B_UP}`, cookie)
+    await post(`/dashboard/bookings/${B_UP}/resend`, { csrf }, cookie)
+    expect(sent.some((m) => m.kind === 'calendar.sync')).toBe(false)
+  })
+
+  it('refuses a past or cancelled booking, and says why', async () => {
+    const cookie = await seedSession(ALICE_ID)
+    const pastCsrf = await csrfFrom(`/dashboard/bookings/${B_PAST}`, cookie)
+    const past = await post(`/dashboard/bookings/${B_PAST}/resend`, { csrf: pastCsrf }, cookie)
+    expect(past.status).toBe(400)
+    expect(await past.text()).toContain('This booking cannot be resent right now.')
+
+    const cancCsrf = await csrfFrom(`/dashboard/bookings/${B_CANC}`, cookie)
+    const canc = await post(`/dashboard/bookings/${B_CANC}/resend`, { csrf: cancCsrf }, cookie)
+    expect(canc.status).toBe(400)
+    expect(sent).toHaveLength(0)
+  })
+
+  it('is a 404 for a stranger, and a 403 without the CSRF token', async () => {
+    const stranger = await seedSession(OUTSIDER_ID)
+    const csrf = await csrfFrom('/dashboard/bookings', stranger)
+    expect((await post(`/dashboard/bookings/${B_TEAM}/resend`, { csrf }, stranger)).status).toBe(404)
+    const alice = await seedSession(ALICE_ID)
+    expect((await post(`/dashboard/bookings/${B_TEAM}/resend`, {}, alice)).status).toBe(403)
+    expect(sent).toHaveLength(0)
   })
 })
 

@@ -2869,7 +2869,15 @@ function actionsSection(d: HostBookingPageData, path: string, confirmed: boolean
   }
   // Only the guest is mailed about a host's cancellation, so the prompt
   // says so — and the note is addressed to them, not filed as a reason.
-  return `<section class="pu-card" aria-label="Actions">
+  return `<section class="pu-card" aria-label="Confirmation">
+    <h2>Confirmation</h2>
+    <form method="post" action="${path}/resend">
+      ${csrfField(d.csrf)}
+      <p class="pu-help">Resends the original confirmation email, with the .ics attached, to ${escapeHtml(d.booking.guestName)} and the booking's host. Any older manage link in their inbox stops working — this one replaces it.</p>
+      <button class="pu-btn pu-btn-ghost" type="submit">Resend confirmation</button>
+    </form>
+  </section>
+  <section class="pu-card" aria-label="Actions">
     <h2>Change this booking</h2>
     <p><a class="pu-btn" href="${path}/reschedule">Reschedule</a></p>
     <form method="post" action="${path}/cancel" class="pu-cancel-form"

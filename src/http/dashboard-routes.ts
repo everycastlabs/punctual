@@ -30,7 +30,7 @@
  */
 
 import { Hono, type Context, type MiddlewareHandler } from 'hono'
-import { notifyBookingCancelled, notifyWebhooks } from '../adapters/notify.js'
+import { notifyBookingCancelled, notifyWebhooks, resendBookingConfirmation } from '../adapters/notify.js'
 import { dispatchConfirmation } from '../adapters/queue/consumer.js'
 import type {
   BookingListView,
@@ -68,6 +68,7 @@ import {
   defaultSchedule,
   parseSignupPolicy,
   createApiKey,
+  issueManageToken,
   requestMagicLink,
   revokeSession,
   validateSession,
@@ -2686,7 +2687,9 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
         ? 'Booking moved. The guest has been emailed the new time.'
         : c.req.query('hosts')
           ? 'Participants updated.'
-          : undefined
+          : c.req.query('resent')
+            ? 'Confirmation resent.'
+            : undefined
     return c.html(hostBookingPage(await hostBookingPageData(c, access, notice ? { notice } : {})))
   })
 
@@ -2717,6 +2720,45 @@ export function buildDashboardRoutes(ports: EnginePorts, slots: SlotService): Ap
     }
     await advanceBookmark(c)
     return c.redirect(`/dashboard/bookings/${encodeURIComponent(access.booking.id)}?cancelled=1`, 302)
+  })
+
+  /**
+   * Resend the original confirmation — a host asking "did the guest actually
+   * get this?" without changing anything about the booking itself. Only the
+   * HASH of the original manage token is ever stored, so this reissues a
+   * fresh one the same way a reschedule already does, rather than trying to
+   * recover a raw value that was never kept.
+   */
+  app.post('/dashboard/bookings/:id/resend', requireSession, async (c) => {
+    const form = await c.req.formData()
+    if (!(await csrfOk(c, form))) return csrfRejected(c)
+    const access = await hostBookingAccess(c)
+    if (!access) return notFound(c)
+    const { booking, eventType } = access
+    if (booking.status !== 'confirmed' || booking.endUtc <= ports.clock.now() || !eventType) {
+      return c.html(
+        hostBookingPage(await hostBookingPageData(c, access, { error: 'This booking cannot be resent right now.' })),
+        400,
+      )
+    }
+
+    const repos = c.get('repos')
+    const issued = await issueManageToken({ crypto: ports.crypto }, booking, 'manage')
+    await repos.bookings.rotateManageToken(booking.id, issued.tokenHash)
+    const primary = (await repos.users.byId(booking.hostUserId)) ?? c.get('user')
+    const onBooking = (await Promise.all([...attendingIds(booking)].map((id) => repos.users.byId(id)))).filter(
+      (u): u is User => u !== null,
+    )
+    await resendBookingConfirmation({
+      ports,
+      booking,
+      eventType,
+      host: primary,
+      hosts: onBooking.length > 0 ? onBooking : [primary],
+      manageToken: issued.token,
+    })
+    await advanceBookmark(c)
+    return c.redirect(`/dashboard/bookings/${encodeURIComponent(booking.id)}?resent=1`, 302)
   })
 
   /**

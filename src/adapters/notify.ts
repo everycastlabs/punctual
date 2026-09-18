@@ -52,12 +52,38 @@ export interface NotifyContext {
  * — the single most commonly botched part of .ics.
  */
 export async function notifyBookingCreated(ctx: NotifyContext): Promise<void> {
-  const { ports, booking, eventType, host } = ctx
+  const { ports, booking, eventType } = ctx
 
   // The replacement booking of a reschedule already gets a "Rescheduled" mail
   // from the route that moved it. Sending "Confirmed" as well gives the guest
   // two contradictory emails for one action.
   if (booking.rescheduleOf) return
+  await sendConfirmationEmails(ctx)
+  await notifyWebhooks(ports, 'booking.created', booking, eventType)
+}
+
+/**
+ * Resend the exact same confirmation emails for a booking that already has
+ * them — a host asking "did the guest actually get this?" without changing
+ * anything about the booking itself (`dashboard-routes.ts`'s `/resend`
+ * route). `ctx.manageToken` must be a FRESHLY issued raw token: only the
+ * hash of the original is ever stored, so resending reuses the same
+ * rotate-and-reissue step a reschedule already does, not the original link.
+ *
+ * Unlike `notifyBookingCreated`, this never skips a booking with
+ * `rescheduleOf` set — that guard exists only to avoid a double-send at
+ * CREATE time, not to forbid ever notifying a rescheduled booking again —
+ * and it does not re-fire the `booking.created` webhook, which already
+ * fired once; firing it again would tell a webhook consumer a second
+ * booking exists.
+ */
+export async function resendBookingConfirmation(ctx: NotifyContext): Promise<void> {
+  await sendConfirmationEmails(ctx)
+}
+
+async function sendConfirmationEmails(ctx: NotifyContext): Promise<void> {
+  const { ports, booking, eventType, host } = ctx
+
   const manageUrl = ctx.manageToken
     ? `${ports.config.baseUrl}/booking/${booking.id}?token=${encodeURIComponent(ctx.manageToken)}`
     : undefined
@@ -150,7 +176,6 @@ export async function notifyBookingCreated(ctx: NotifyContext): Promise<void> {
         },
       })
       .catch((err) => console.error('[punctual] host notification failed to queue', err)),
-    notifyWebhooks(ports, 'booking.created', booking, eventType),
   ])
 }
 
