@@ -129,7 +129,13 @@ function harness(opts: HarnessOptions = {}) {
   const ports = {
     clock: { now: () => Date.UTC(2026, 8, 1) },
     crypto: { randomToken: (n = 16) => 'r'.repeat(n), hash: async (v: string) => `h:${v}`, sign: async () => 'sig' },
-    config: { baseUrl: 'https://punctual.test', brandName: 'Punctual', supportEmail: 'help@punctual.test' },
+    config: {
+      baseUrl: 'https://punctual.test',
+      brandName: 'Punctual',
+      supportEmail: 'help@punctual.test',
+      fromEmail: 'noreply@punctual.test',
+      fromName: 'Punctual',
+    },
     calendars: { get: () => ({ createEvent, updateEvent, deleteEvent }) },
     queue: { send: async (m: QueueMessage) => void queued.push(m) },
     repositories: () => ({
@@ -602,6 +608,52 @@ describe('confirmation dispatch', () => {
 
     await handleOne(h.sync, h.ports)
     expect(h.emails()).toHaveLength(0)
+  })
+})
+
+describe('confirmation dispatch re-resolves the booking\'s own brand', () => {
+  // A queue-consumer invocation (this handler) has no live request, so
+  // `ports.config` here is only ever the harness's own stand-in for the
+  // AMBIENT default brand — never the booking's real one on a multi-brand
+  // deployment (adapters/brands.ts). Passing `env` is what lets
+  // `dispatchConfirmation` look the real brand up from `Booking.brandHost`
+  // instead of trusting that stale ambient config.
+  const env = { BASE_URL: 'https://punctual.test' }
+
+  it('uses the booking\'s own brand, not the ambient default, when env is passed', async () => {
+    const h = harness({ bookingPatch: { brandHost: 'cal.scoutsuite.app' } })
+    await handleOne(h.sync, h.ports, env)
+    const emails = h.emails()
+    expect(emails.length).toBeGreaterThan(0)
+    for (const m of emails) {
+      if (m.kind !== 'email') continue
+      expect(m.message.from).toBe('scheduling@scoutsuite.app')
+      expect(m.message.fromName).toBe('Scout Suite')
+    }
+  })
+
+  it('falls back to the ambient config when env is omitted — self-hosted, single-brand behaviour is unchanged', async () => {
+    const h = harness({ bookingPatch: { brandHost: 'cal.scoutsuite.app' } })
+    await handleOne(h.sync, h.ports)
+    const emails = h.emails()
+    expect(emails.length).toBeGreaterThan(0)
+    for (const m of emails) {
+      if (m.kind !== 'email') continue
+      expect(m.message.from).toBe('noreply@punctual.test')
+    }
+  })
+
+  it('resolves the env-derived default brand for a booking with no recognized brandHost — self-hosted, single-brand deployments still work', async () => {
+    const h = harness({ bookingPatch: { brandHost: null } })
+    const selfHostedEnv = { ...env, FROM_EMAIL: 'scheduling@self-hosted.example', FROM_NAME: 'Self Hosted' }
+    await handleOne(h.sync, h.ports, selfHostedEnv)
+    const emails = h.emails()
+    expect(emails.length).toBeGreaterThan(0)
+    for (const m of emails) {
+      if (m.kind !== 'email') continue
+      expect(m.message.from).toBe('scheduling@self-hosted.example')
+      expect(m.message.fromName).toBe('Self Hosted')
+    }
   })
 })
 
