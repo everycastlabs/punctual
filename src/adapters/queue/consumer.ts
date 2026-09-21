@@ -13,11 +13,22 @@ import { calendarDescription, calendarTitle, participantsFor, type Participant }
 import { hostSettings } from '../../core/domain/hosts.js'
 import { needsReconnect } from '../oauth.js'
 import { notifyBookingCreated, notifyBookingRescheduled } from '../notify.js'
+import { resolveBrand, type DefaultBrandEnv } from '../brands.js'
 
-export async function handleQueueBatch(batch: MessageBatch, ports: EnginePorts): Promise<void> {
+/**
+ * `env` is the raw brand-resolution input (see `resolveBrand`, `adapters/
+ * scheduled.ts`'s reminders cron does the same thing for the same reason):
+ * a queue consumer invocation has no live request, so `ports.config` already
+ * fell back to the DEFAULT brand at `buildPorts` time — every domain on a
+ * multi-brand deployment (adapters/brands.ts) would otherwise have its
+ * confirmation emails sent from the template's placeholder address instead
+ * of its own. `dispatchConfirmation` re-resolves per booking, from
+ * `Booking.brandHost`, before building anything brand-specific.
+ */
+export async function handleQueueBatch(batch: MessageBatch, ports: EnginePorts, env?: DefaultBrandEnv): Promise<void> {
   for (const message of batch.messages) {
     try {
-      await handleOne(message.body as QueueMessage, ports)
+      await handleOne(message.body as QueueMessage, ports, env)
       message.ack()
     } catch (err) {
       // Retry individually: one bad webhook endpoint must not hold up
@@ -28,7 +39,7 @@ export async function handleQueueBatch(batch: MessageBatch, ports: EnginePorts):
   }
 }
 
-export async function handleOne(msg: QueueMessage, ports: EnginePorts): Promise<void> {
+export async function handleOne(msg: QueueMessage, ports: EnginePorts, env?: DefaultBrandEnv): Promise<void> {
   switch (msg.kind) {
     case 'email':
       await ports.email.send(msg.message)
@@ -39,7 +50,7 @@ export async function handleOne(msg: QueueMessage, ports: EnginePorts): Promise<
       return
 
     case 'calendar.sync':
-      await syncCalendar(msg, ports)
+      await syncCalendar(msg, ports, env)
       return
   }
 }
@@ -118,6 +129,7 @@ async function hmacHex(secret: string, payload: string): Promise<string> {
 async function syncCalendar(
   msg: Extract<QueueMessage, { kind: 'calendar.sync' }>,
   ports: EnginePorts,
+  env?: DefaultBrandEnv,
 ): Promise<void> {
   const repos = ports.repositories({ consistency: 'bookmark' })
   const booking = await repos.bookings.byId(msg.bookingId)
@@ -348,7 +360,7 @@ async function syncCalendar(
     // the calendar work above is idempotent (guarded by `externalEventIds`),
     // so redelivery is safe. Releasing the claim is `dispatchConfirmation`'s
     // job, because only it knows whether THIS attempt won one.
-    await dispatchConfirmation(booking.id, ports, msg.manageToken)
+    await dispatchConfirmation(booking.id, ports, msg.manageToken, env)
   }
 }
 
@@ -461,11 +473,20 @@ export async function dispatchConfirmation(
   bookingId: string,
   ports: EnginePorts,
   manageToken: string | undefined,
+  env?: DefaultBrandEnv,
 ): Promise<void> {
   const repos = ports.repositories({ consistency: 'bookmark' })
 
   const booking = await repos.bookings.byId(bookingId)
   if (!booking || booking.status !== 'confirmed') return
+
+  // `env` is only ever passed by the queue-consumer path (`handleOne` above),
+  // the one caller with no live request to have resolved this correctly
+  // already — every other caller (a route falling back after its own enqueue
+  // failed) already has the right brand in its ambient `ports.config` and
+  // omits `env`, so this is a no-op for them.
+  const brand = env ? resolveBrand(booking.brandHost ?? null, env) : null
+  const scopedPorts: EnginePorts = brand ? { ...ports, config: { ...ports.config, ...brand } } : ports
   const eventType = await repos.eventTypes.byId(booking.eventTypeId)
   if (!eventType) return
   const host = await repos.users.byId(booking.hostUserId)
@@ -498,7 +519,7 @@ export async function dispatchConfirmation(
 
   // Claimed as late as possible, but still before sending: Queues is
   // at-least-once, so a redelivery must not send a second confirmation.
-  if (!(await repos.bookings.claimConfirmation(bookingId, ports.clock.now()))) return
+  if (!(await repos.bookings.claimConfirmation(bookingId, scopedPorts.clock.now()))) return
 
   // Released ONLY on a claim this attempt won. Releasing from an outer catch
   // was wrong in a way that undoes the migration backfill: an attempt that
@@ -509,7 +530,7 @@ export async function dispatchConfirmation(
   try {
     if (previous) {
       await notifyBookingRescheduled({
-        ports,
+        ports: scopedPorts,
         booking,
         previous,
         eventType,
@@ -519,7 +540,7 @@ export async function dispatchConfirmation(
       })
       return
     }
-    await notifyBookingCreated({ ports, booking, eventType, host, hosts, ...(manageToken ? { manageToken } : {}) })
+    await notifyBookingCreated({ ports: scopedPorts, booking, eventType, host, hosts, ...(manageToken ? { manageToken } : {}) })
   } catch (err) {
     await repos.bookings.releaseConfirmationClaim(bookingId).catch(() => {})
     throw err

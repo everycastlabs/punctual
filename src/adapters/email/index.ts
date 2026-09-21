@@ -233,12 +233,20 @@ export function createCloudflareSender(opts: CloudflareOptions): EmailSender {
       // is a bug waiting for the one deployment that switches providers.
       const to = sanitizeHeader(message.to)
       const toName = message.toName ? sanitizeHeader(message.toName) : undefined
+      // Same fallback as Resend/Brevo: a queued message carries the brand
+      // `from` it was composed with (`EmailMessage.from`). The queue
+      // consumer's sender is built with no HTTP request, so `opts.from` is
+      // the Worker default, not the brand the guest booked on. Sending
+      // from that default against Cloudflare Email Service fails unless
+      // that exact domain is onboarded — which a multi-brand deploy's
+      // fallback address typically is not.
+      const fromEmail = sanitizeHeader(message.from ?? opts.from)
+      const fromNameRaw = message.fromName ?? opts.fromName
+      const fromName = fromNameRaw ? sanitizeHeader(fromNameRaw) : undefined
 
       try {
         await opts.binding.send({
-          from: opts.fromName
-            ? { email: sanitizeHeader(opts.from), name: sanitizeHeader(opts.fromName) }
-            : sanitizeHeader(opts.from),
+          from: fromName ? { email: fromEmail, name: fromName } : fromEmail,
           to: toName ? { email: to, name: toName } : to,
           subject: message.subject,
           html: message.html,

@@ -372,6 +372,22 @@ describe('Cloudflare Email Service sender', () => {
     expect(seen.text).toBe('x')
   })
 
+  it('honours a per-message from, so a queued brand email does not go out as the Worker default', async () => {
+    // Queue consumer `buildPorts` has no request, so the sender's own from is
+    // the fallback brand. The message already carries scheduling@scoutsuite.app
+    // from enqueue time; dropping it is how guest confirmations vanish after
+    // switching this deployment from Resend to Cloudflare Email.
+    const seen = await capture({
+      to: 'g@example.com',
+      subject: 'Booked',
+      html: '<p>x</p>',
+      text: 'x',
+      from: 'scheduling@scoutsuite.app',
+      fromName: 'Scout Suite',
+    })
+    expect(seen.from).toEqual({ email: 'scheduling@scoutsuite.app', name: 'Scout Suite' })
+  })
+
   it('sends a bare address when no display name is configured', async () => {
     const seen = await capture({ to: 'g@example.com', subject: 's', html: 'h', text: 't' }, null)
     expect(seen.from).toBe('hello@punctual.sh')

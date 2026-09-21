@@ -178,7 +178,7 @@ export function buildPorts(env: Env, request?: Request): EnginePorts {
   // calendar sync. Late-bound because handleOne needs the finished ports.
   let portsRef: EnginePorts
   const queue = createQueueAdapter(env.TASKS, async (message) => {
-    await handleOne(message, portsRef)
+    await handleOne(message, portsRef, env)
   })
   const rateLimiter = createRateLimiterAdapter(env.RATE_LIMITER)
 
@@ -241,7 +241,7 @@ export default {
       for (const m of batch.messages) m.retry()
       return
     }
-    await handleQueueBatch(batch, ports)
+    await handleQueueBatch(batch, ports, env)
   },
 
   /**
