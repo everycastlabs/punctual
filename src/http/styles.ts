@@ -651,6 +651,7 @@ input:has(+ .pu-err),select:has(+ .pu-err),textarea:has(+ .pu-err){border-color:
    (readEventTypeForm), so an old browser that shows them loses nothing. */
 form:has(#owner option[value=""]:checked) .pu-sched-wrap{display:none}
 form:has(#locationType option[value="google_meet"]:checked) .pu-loc-wrap{display:none}
+form:has(#locationType option[value="scout_suite"]:checked) .pu-loc-wrap{display:none}
 /* Hosts: one grid row per host — name, attendance or weight, schedule —
    stacking to a single column on a phone, where three table columns
    squeeze each control to a few characters. */

@@ -343,7 +343,7 @@ const eventTypeFields = {
   minNoticeMinutes: z.number().int().min(0).max(60 * 24 * 365),
   maxHorizonDays: z.number().int().min(1).max(730),
   maxPerDay: z.number().int().min(1).max(100).nullable(),
-  locationType: z.enum(['google_meet', 'custom_link', 'phone', 'in_person']),
+  locationType: z.enum(['google_meet', 'scout_suite', 'custom_link', 'phone', 'in_person']),
   locationValue: z.string().max(500).nullable(),
   questions: z.array(questionSchema).max(20),
   active: z.boolean(),

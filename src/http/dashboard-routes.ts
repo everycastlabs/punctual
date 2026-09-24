@@ -3761,7 +3761,9 @@ function isHttpUrl(value: string): boolean {
 }
 
 function locationTypeOf(value: string): EventType['locationType'] {
-  return value === 'custom_link' || value === 'phone' || value === 'in_person' ? value : 'google_meet'
+  return value === 'scout_suite' || value === 'custom_link' || value === 'phone' || value === 'in_person'
+    ? value
+    : 'google_meet'
 }
 
 /**

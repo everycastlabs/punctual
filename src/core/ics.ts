@@ -291,6 +291,10 @@ export function describeLocation(et: EventType, conferenceUrl?: string | null): 
       // No link yet (sync has not run, or the provider minted none). Say
       // that plainly rather than pointing at an invite that does not have it.
       return et.locationValue ?? 'Online meeting link to follow'
+    case 'scout_suite':
+      // Same shape as Meet: the room is created during calendar sync, before the email is sent.
+      if (conferenceUrl) return conferenceUrl
+      return 'Online meeting link to follow'
     case 'custom_link':
       return et.locationValue ?? 'Online'
     case 'phone':

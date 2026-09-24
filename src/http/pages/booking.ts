@@ -494,6 +494,8 @@ function locationLabel(et: EventType): string {
   switch (et.locationType) {
     case 'google_meet':
       return 'Google Meet'
+    case 'scout_suite':
+      return 'Online meeting'
     case 'phone':
       return 'Phone call'
     case 'in_person':

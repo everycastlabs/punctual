@@ -14,6 +14,7 @@ import { hostSettings } from '../../core/domain/hosts.js'
 import { needsReconnect } from '../oauth.js'
 import { notifyBookingCreated, notifyBookingRescheduled } from '../notify.js'
 import { resolveBrand, type DefaultBrandEnv } from '../brands.js'
+import { scoutSuiteMeetingId } from '../scout-suite/conferences.js'
 
 /**
  * `env` is the raw brand-resolution input (see `resolveBrand`, `adapters/
@@ -148,6 +149,13 @@ async function syncCalendar(
 
   // ---- delete: the stored events, whatever shape they were written in ----
   if (msg.action === 'delete') {
+    // A Scout Suite room goes with its booking. Best effort, like the calendar deletes below: a
+    // room left behind is an empty meeting nobody has the link to join any more.
+    if (booking.conferenceUrl && ports.conferences && scoutSuiteMeetingId(booking.conferenceUrl)) {
+      await ports.conferences
+        .cancel(booking.conferenceUrl)
+        .catch((err) => console.error(`[punctual] could not cancel meeting room for booking ${booking.id}`, err))
+    }
     for (const [connId, externalId] of Object.entries(booking.externalEventIds)) {
       const conn = await repos.connections.byId(connId)
       if (!conn) {
@@ -202,6 +210,26 @@ async function syncCalendar(
   // the people and their companies (core/domain/calendar-text.ts).
   const title = calendarTitle(eventType, plan.participants)
   const description = calendarDescription(eventType, booking, plan.participants)
+
+  // A Scout Suite room is made here, before any calendar event, so every event, the .ics and
+  // the confirmation email carry its link. `create` is idempotent on the booking id, so a
+  // redelivered message gets the same room back; a failure throws and the message retries.
+  let roomCreatedThisPass: string | null = null
+  if (eventType.locationType === 'scout_suite') {
+    if (!ports.conferences) {
+      console.error(`[punctual] event type ${eventType.id} uses Scout Suite meetings but SCOUT_SUITE_* is not configured`)
+    } else if (!conferenceUrl) {
+      conferenceUrl = (
+        await ports.conferences.create({ externalRef: booking.id, title, start: booking.startUtc, end: booking.endUtc })
+      ).url
+      conferenceRequested = true
+      roomCreatedThisPass = conferenceUrl
+    } else if (msg.action === 'update') {
+      await ports.conferences
+        .update(conferenceUrl, { title, start: booking.startUtc, end: booking.endUtc })
+        .catch((err) => console.error(`[punctual] could not update meeting room for booking ${booking.id}`, err))
+    }
+  }
   const externalFor = (conn: CalendarConnection, attendees: ExternalEvent['attendees']): ExternalEvent => ({
     title,
     description,
@@ -269,6 +297,12 @@ async function syncCalendar(
   const abandonedIfCancelled = async (): Promise<boolean> => {
     const current = await repos.bookings.byId(booking.id)
     if (!current || current.status === 'confirmed') return false
+    // Same race for a room made this pass: the delete sync ran before its link was stored.
+    if (roomCreatedThisPass && ports.conferences) {
+      await ports.conferences
+        .cancel(roomCreatedThisPass)
+        .catch((err) => console.error(`[punctual] could not cancel meeting room for cancelled booking ${booking.id}`, err))
+    }
     for (const made of freshlyCreated) {
       await ports.calendars
         .get(made.conn.provider)
@@ -325,7 +359,15 @@ async function syncCalendar(
     }
 
     await createMissing(plan.events.filter((t) => !anchor.has(t.conn.provider)))
-    if (freshlyCreated.length === 0) return
+    if (freshlyCreated.length === 0) {
+      // No new calendar event, but a room may have been made (the event type moved to Scout
+      // Suite meetings after booking): keep its link.
+      if (conferenceUrl !== booking.conferenceUrl) {
+        if (await abandonedIfCancelled()) return
+        await repos.bookings.setSyncResult(booking.id, createdIds, conferenceUrl)
+      }
+      return
+    }
     if (await abandonedIfCancelled()) return
     await repos.bookings.setSyncResult(booking.id, createdIds, conferenceUrl)
     return

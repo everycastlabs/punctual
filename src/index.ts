@@ -27,6 +27,7 @@ import { handleOne, handleQueueBatch } from './adapters/queue/consumer.js'
 import { runScheduledTasks } from './adapters/scheduled.js'
 import { parseSignupPolicy } from './core/domain/auth-flows.js'
 import type { EnginePorts, RequestScope } from './ports.js'
+import { createScoutSuiteConferences } from './adapters/scout-suite/conferences.js'
 
 export { HostCalendar } from './do/host-calendar.js'
 export { RateLimiter } from './do/rate-limiter.js'
@@ -63,6 +64,14 @@ export interface Env {
   GOOGLE_CLIENT_ID?: string
   GOOGLE_CLIENT_SECRET?: string
   MICROSOFT_CLIENT_ID?: string
+  /**
+   * Scout Suite meeting rooms for event types located at "Scout Suite meeting". All three are
+   * needed: the API base (https://api.scoutsuite.app), an API key bound to the org the meetings
+   * belong to (secret), and that org's id.
+   */
+  SCOUT_SUITE_API_URL?: string
+  SCOUT_SUITE_API_KEY?: string
+  SCOUT_SUITE_ORG_ID?: string
   MICROSOFT_CLIENT_SECRET?: string
 }
 
@@ -182,9 +191,19 @@ export function buildPorts(env: Env, request?: Request): EnginePorts {
   })
   const rateLimiter = createRateLimiterAdapter(env.RATE_LIMITER)
 
+  const conferences =
+    env.SCOUT_SUITE_API_URL && env.SCOUT_SUITE_API_KEY && env.SCOUT_SUITE_ORG_ID
+      ? createScoutSuiteConferences({
+          apiUrl: env.SCOUT_SUITE_API_URL,
+          apiKey: env.SCOUT_SUITE_API_KEY,
+          orgId: env.SCOUT_SUITE_ORG_ID,
+        })
+      : undefined
+
   const ports: EnginePorts = {
     repositories,
     calendars,
+    ...(conferences ? { conferences } : {}),
     oauth,
     email,
     crypto: crypto_,

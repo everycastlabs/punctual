@@ -590,6 +590,22 @@ export interface ExternalEvent {
   idempotencyKey?: string
 }
 
+/**
+ * A meeting room made per booking by something other than the calendar provider — today a
+ * Scout Suite meeting (adapters/scout-suite). The room's join link is the booking's
+ * `conferenceUrl`, so the calendar events, .ics and emails all carry it like a Meet link.
+ *
+ * `create` must be idempotent on `externalRef` (the booking id): Queues is at-least-once, and a
+ * redelivered sync has to get the same room back, never a second one.
+ */
+export interface ConferenceProvider {
+  create(input: { externalRef: string; title: string; start: number; end: number }): Promise<{ url: string }>
+  /** Move or rename the room after a reschedule. */
+  update(url: string, input: { title: string; start: number; end: number }): Promise<void>
+  /** The booking was cancelled. */
+  cancel(url: string): Promise<void>
+}
+
 export interface CalendarProviders {
   get(name: CalendarProviderName): CalendarProvider
   available(): CalendarProviderName[]
@@ -1006,6 +1022,8 @@ export interface EnginePorts {
   /** Per-request, because the D1 session is per-request (ADR-0007 §1). */
   repositories: (ctx: RequestScope) => Repositories
   calendars: CalendarProviders
+  /** Scout Suite meeting rooms, when configured; event types with that location need it. */
+  conferences?: ConferenceProvider
   oauth: OAuthCredentials
   email: EmailSender
   crypto: Crypto
