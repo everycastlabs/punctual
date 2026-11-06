@@ -84,7 +84,12 @@ export interface TeamMember {
 // Event types
 // ---------------------------------------------------------------------------
 
-export type LocationType = 'google_meet' | 'custom_link' | 'phone' | 'in_person'
+/**
+ * `scout_suite`: a Scout Suite meeting room, created per booking through the Scout Suite API
+ * (adapters/scout-suite). Guests join at its /meet link without an account, and the call is
+ * recorded and transcribed there.
+ */
+export type LocationType = 'google_meet' | 'scout_suite' | 'custom_link' | 'phone' | 'in_person'
 export type SchedulingType = 'personal' | 'round_robin' | 'collective'
 
 export interface EventTypeQuestion {

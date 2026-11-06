@@ -562,6 +562,8 @@ function locationLabel(et: EventType): string {
   switch (et.locationType) {
     case 'google_meet':
       return 'Google Meet'
+    case 'scout_suite':
+      return 'Scout Suite meeting'
     case 'phone':
       return 'Phone call'
     case 'in_person':
@@ -638,6 +640,7 @@ export interface HostDraft {
 
 const LOCATION_OPTIONS: ReadonlyArray<{ value: EventType['locationType']; label: string }> = [
   { value: 'google_meet', label: 'Google Meet' },
+  { value: 'scout_suite', label: 'Scout Suite meeting' },
   { value: 'custom_link', label: 'Custom link' },
   { value: 'phone', label: 'Phone call' },
   { value: 'in_person', label: 'In person' },

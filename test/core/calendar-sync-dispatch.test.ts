@@ -17,7 +17,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { Booking, CalendarConnection, EventType, EventTypeHost, User } from '../../src/core/domain/types.js'
-import type { EnginePorts, QueueMessage } from '../../src/ports.js'
+import type { ConferenceProvider, EnginePorts, QueueMessage } from '../../src/ports.js'
 import { handleOne } from '../../src/adapters/queue/consumer.js'
 
 const MEET = 'https://meet.google.com/abc-defg-hij'
@@ -86,6 +86,8 @@ interface HarnessOptions {
   eventTypePatch?: Partial<EventType>
   /** The event type's explicit host set (optional flags). */
   hostRows?: EventTypeHost[]
+  /** A conference provider port (Scout Suite meeting rooms). */
+  conferences?: ConferenceProvider
 }
 
 /**
@@ -137,6 +139,7 @@ function harness(opts: HarnessOptions = {}) {
       fromName: 'Punctual',
     },
     calendars: { get: () => ({ createEvent, updateEvent, deleteEvent }) },
+    ...(opts.conferences ? { conferences: opts.conferences } : {}),
     queue: { send: async (m: QueueMessage) => void queued.push(m) },
     repositories: () => ({
       bookings: {
@@ -728,3 +731,71 @@ describe('an update after a host change (booking-hosts.ts)', () => {
     expect(h.updateEvent).toHaveBeenCalledTimes(3)
   })
 })
+
+describe('Scout Suite meeting rooms', () => {
+  const ROOM = 'https://scoutsuite.app/meet/mtg_1'
+  function rooms() {
+    return {
+      create: vi.fn(async () => ({ url: ROOM })),
+      update: vi.fn(async () => {}),
+      cancel: vi.fn(async () => {}),
+    }
+  }
+
+  it('makes the room before the calendar event, so the event, stored link and email all carry it', async () => {
+    const conferences = rooms()
+    const h = harness({
+      conferences,
+      eventTypePatch: { locationType: 'scout_suite' },
+      createEvent: async () => ({ id: 'evt_1' }),
+    })
+    await handleOne(h.sync, h.ports)
+
+    expect(conferences.create).toHaveBeenCalledWith({
+      externalRef: 'bk_1',
+      title: expect.any(String),
+      start: h.store.booking.startUtc,
+      end: h.store.booking.endUtc,
+    })
+    const external = (h.createEvent.mock.calls[0] as unknown[])[1] as { location?: string; createConference?: boolean }
+    expect(external.location).toBe(ROOM)
+    expect(external.createConference).toBe(false)
+    expect(h.store.booking.conferenceUrl).toBe(ROOM)
+    expect(JSON.stringify(h.emails())).toContain(ROOM)
+  })
+
+  it('reuses the stored room on a redelivered create instead of asking for another', async () => {
+    const conferences = rooms()
+    const h = harness({ conferences, eventTypePatch: { locationType: 'scout_suite' }, bookingPatch: { conferenceUrl: ROOM } })
+    await handleOne(h.sync, h.ports)
+    expect(conferences.create).not.toHaveBeenCalled()
+  })
+
+  it('makes the room even when the host has no calendar connected', async () => {
+    const conferences = rooms()
+    const h = harness({ conferences, eventTypePatch: { locationType: 'scout_suite' }, connections: [] })
+    await handleOne(h.sync, h.ports)
+    expect(h.store.booking.conferenceUrl).toBe(ROOM)
+    expect(JSON.stringify(h.emails())).toContain(ROOM)
+  })
+
+  it('cancels the room with the booking', async () => {
+    const conferences = rooms()
+    const h = harness({
+      conferences,
+      eventTypePatch: { locationType: 'scout_suite' },
+      bookingPatch: { conferenceUrl: ROOM, status: 'cancelled', externalEventIds: { conn_1: 'evt_1' } },
+    })
+    await handleOne({ ...h.sync, action: 'delete' }, h.ports)
+    expect(conferences.cancel).toHaveBeenCalledWith(ROOM)
+  })
+
+  it('leaves Google Meet bookings alone', async () => {
+    const conferences = rooms()
+    const h = harness({ conferences })
+    await handleOne(h.sync, h.ports)
+    expect(conferences.create).not.toHaveBeenCalled()
+    expect(h.store.booking.conferenceUrl).toBe(MEET)
+  })
+})
+

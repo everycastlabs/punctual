@@ -17,6 +17,16 @@ still change interfaces.
 
 ### Added
 
+- **Scout Suite meetings as a location.** An event type can be located at
+  *Scout Suite meeting*: each booking gets its own Scout Suite room, made
+  during calendar sync before any event is written, so the calendar events,
+  the `.ics` and the confirmation email all carry its `/meet` link. Guests
+  join with just a name; the call is recorded and transcribed in Scout
+  Suite. Rooms are created idempotently on the booking id (a redelivered
+  sync gets the same room), moved with a host change, and cancelled with
+  the booking. Configure with `SCOUT_SUITE_API_URL`, `SCOUT_SUITE_ORG_ID`
+  and the secret `SCOUT_SUITE_API_KEY` (a key bound to that org).
+
 - **`EMAIL_PROVIDER`.** Name the email sender — `cloudflare`, `resend`,
   `brevo` or `console` — instead of having it inferred from which key or
   binding is set. A named provider whose key or binding is missing is
